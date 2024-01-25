@@ -22,12 +22,6 @@ library(sp) #
 library(raster) #aggregate
 library(marmap)  #getNOAA.bathy
 library(tidyverse) #several functions
-
-
-
-library(sdmpredictors) # to download data from bio-oracle
-library(ncdf4) # to read netcdf
-library(tidyverse)
 ```
 
 
