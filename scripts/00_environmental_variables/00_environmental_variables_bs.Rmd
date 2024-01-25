@@ -1,0 +1,1951 @@
+---
+title: "Prepare environmental variables for 3D modelling"
+author: "Eduardo Ramirez Romero & Mireia Valle. Small changes by Leire Ibaibarriaga"
+date: "11/01/2022"
+output: html_document: 
+  toc: true
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warming = FALSE)
+```
+
+### Loading required libraries
+
+```{r}
+library(rgdal) #readOGR
+library (sf)     # st_as_sf
+library (here) # Libraries for reproducible workflow
+library(sp) #
+library(raster) #aggregate
+library(marmap)  #getNOAA.bathy
+library(tidyverse) #several functions
+
+
+
+library(sdmpredictors) # to download data from bio-oracle
+library(ncdf4) # to read netcdf
+library(tidyverse)
+```
+
+
+### Study area
+
+Reading FAO spatial multipolygon
+
+```{r}
+FAO<- readOGR(here::here("data", "raw_data", "FAO_Areas", "FAO_AREAS.shp"))
+
+# Ploting FAO regions
+plot(FAO)
+
+#Selecting Atlantic FAO regions
+FAO_Atl <- FAO[FAO$OCEAN=="Atlantic",]
+
+plot(FAO_Atl)
+
+#remove Black Sea subarea
+
+Black_Sea <- FAO_Atl[FAO_Atl$ID=="20",]
+
+plot(Black_Sea)
+
+## Find the 'difference', i.e. reverse of st_intersection
+
+# transform to sf object
+Black_Sea.sf <- st_as_sf(Black_Sea)
+
+FAO_Atl.sf <- st_as_sf(FAO_Atl)
+
+# remove the black see
+FAO_Atl_no_black_sea <- st_difference(FAO_Atl.sf,Black_Sea.sf) %>% 
+  dplyr::select (F_AREA)
+
+plot(FAO_Atl_no_black_sea)
+
+#transform to spatial polygons dataframe
+FAO_Atl_no_black_sea <- sf::as_Spatial(FAO_Atl_no_black_sea)
+
+#Save shp 
+raster::shapefile(x = FAO_Atl_no_black_sea, file = here::here("data", "raw_data","FAO_Areas","FAO_Atl.shp"))
+
+# dissolve the polygons
+FAO_Atl_no_black_sea_dissolved <- aggregate(FAO_Atl_no_black_sea)
+
+plot(FAO_Atl_no_black_sea_dissolved)
+
+FAO_Atl_dissolved <- FAO_Atl_no_black_sea_dissolved
+
+# Ploting selected FAO regions
+plot(FAO_Atl_dissolved)
+
+#Save shp 
+raster::shapefile(x = FAO_Atl_no_black_sea_dissolved, file = here::here("data", "raw_data","FAO_Areas","FAO_Atlantic_dissolved.shp"), overwrite=TRUE)
+```
+
+### Environmental data
+
+Downloading environmental data and preparing it for modelling 
+
+#### 2D variables
+
+
+##### 1. Bathymetry (seabed) (m)
+
+Downloading world's oceans bathymetry data from NOAA, masking to FAO Atlantic and saving it
+
+```{r}
+bathy<-getNOAA.bathy(lon1 = -180, lon2 =180, lat1 = 90, lat2 =-90, resolution = 15,keep=TRUE,path = here::here ("data", "raw_data", "variables","BATHY"))
+
+# Transform the bathymetry to raster format 
+bathy.ras <- marmap::as.raster(bathy)
+
+# Plot 
+plot(bathy.ras)
+
+#Cropping it to our study area
+bathy_atl<- crop(bathy.ras, FAO_Atl_dissolved)
+
+# Ploting the bathymetric data for our study area
+plot(bathy_atl)
+
+# Check new extent
+bathy_atl
+
+# create a mask for the ocean 
+mask_bathy <- bathy_atl < 1
+
+plot(mask_bathy)
+
+## assign NA to values = 0 (land)
+
+mask_bathy [mask_bathy == 0] <- NA
+
+plot(mask_bathy)
+
+# bathy ocean only
+
+bathy_atl_ocean <- bathy_atl * mask_bathy
+
+plot(bathy_atl_ocean)
+
+# rename
+bathy_atl <- bathy_atl_ocean
+
+#clip the variable to the study area
+
+bathy_atl <- mask(bathy_atl, FAO_Atl_dissolved)
+plot(bathy_atl)
+
+save(bathy_atl,file= (here::here("data", "derived_data","variables", "BATHY", "bathy_atl.RData")))
+
+# Save raster
+writeRaster(bathy_atl,
+             filename=here::here ("data", "derived_data", "outputs_for_modelling", "variables", "bathy_atl.tif"),
+             format="GTiff",
+             overwrite=TRUE)
+
+```
+
+
+##### 2. Mixed Layer Depth (MLD) (m)
+
+Objectively analyzed mean fields for ocean_mixed_layer_thickness at standard depth levels. 
+
+We first manually download the data in netcdf format from World Ocean Atlas (WOA): https://www.ncei.noaa.gov/access/world-ocean-atlas-2018/
+select: netcdf/ 1/4º period 1981-2010 and get the 00_ file from THREDDS Catalog which are annual climatologies
+
+direct link: https://www.ncei.noaa.gov/thredds-ocean/catalog/ncei/woa/mld/decav81B0/1.00/catalog.html
+
++info: https://www.ncei.noaa.gov/data/oceans/woa/WOA18/DOC/woa18documentation.pdf
+
+```{r}
+# Reading netcdf in raster format
+mld.r <- raster(here::here("data", "raw_data", "variables","MLD", "woa18_decav81B0_M0200_04.nc"))
+
+# Check extent and resolution
+mld.r
+
+# Plot
+plot(mld.r)
+
+# Give same projection as bathy_atl
+projection(mld.r) <- projection(bathy_atl)
+
+# Check extent and resolution
+mld.r
+
+# Resample to match extent/resolution of bathy_atl
+mld.r <- resample(mld.r,bathy_atl, resample='bilinear')
+
+# Plot 
+plot(mld.r)
+
+# mask to the study area
+mld.r <- mask(mld.r, FAO_Atl_dissolved)
+
+# Plot
+plot(mld.r)
+
+# Check new extent and resolution
+mld.r
+
+# Save RData
+save(mld.r,file=(here::here("data", "derived_data","variables", "MLD","mld.RData")))
+ 
+# Save raster
+writeRaster(mld.r, 
+             filename=here::here ("data", "derived_data", "outputs_for_modelling", "variables", "mld.tif"),
+             format="GTiff",
+             overwrite=TRUE)
+```
+
+#### 3D variables
+
+##### 3. Nitrate (µmol/kg)
+
+We first manually download the data in netcdf format from World Ocean Atlas (WOA): https://www.ncei.noaa.gov/access/world-ocean-atlas-2018/
+select: Netcdf, 1º and 00_ file from THREDDS Catalog which are annual climatologies
+
+direct link:  https://www.ncei.noaa.gov/thredds-ocean/catalog/ncei/woa/nitrate/all/1.00/catalog.html?dataset=ncei/woa/nitrate/all/1.00/woa18_all_n00_01.nc
+
++info: https://www.ncei.noaa.gov/data/oceans/woa/WOA18/DOC/woa18documentation.pdf
+
+```{r}
+# Reading netcdf in raster format
+nit_3d <- brick(here::here("data", "raw_data", "variables", "NIT", "woa18_all_n00_01.nc"))
+
+# Check extent and resolution
+nit_3d
+
+# Resample to match extent/resolution of bathy_atl
+nit_3d<- resample(nit_3d,bathy_atl, resample='bilinear')
+
+# Check new extent and resolution 
+nit_3d
+
+# Keep data until 1000 meters depth
+idx <- names(nit_3d)[as.numeric(substring(names(nit_3d), 2)) < 1050]
+nit_3d_1000 <- raster::subset(nit_3d, idx)
+
+# mask to the study area
+nit_3d_1000 <- mask(nit_3d_1000, FAO_Atl_dissolved)
+
+#plot
+plot (nit_3d_1000)
+
+# create nit top layer raster 
+nitsup<-raster(nit_3d_1000, layer=1) 
+
+# Plot 
+plot(nitsup)
+
+#save RData
+save(nitsup, nit_3d_1000,file= here::here ("data", "derived_data", "variables", "NIT", "nit.RData"))
+
+#save raster
+writeRaster(nitsup, 
+            filename= here::here ("data", "derived_data", "outputs_for_modelling", "variables", "nitsup.tif"),
+            format="GTiff",
+            overwrite=TRUE)
+
+#save brick
+writeRaster(nit_3d_1000, 
+            filename=here::here ("data", "derived_data", "outputs_for_modelling", "variables","nit_3d_1000.tif"),
+            format="GTiff", 
+            overwrite=TRUE,
+            options=c("INTERLEAVE=BAND","COMPRESS=LZW"))
+
+```
+
+##### 4. Dissolved Oxygen (µmol/kg)
+
+We first manually download the data in netcdf format from World Ocean Atlas (WOA): https://www.ncei.noaa.gov/access/world-ocean-atlas-2018/
+select: Netcdf, 1º and 00_ file from THREDDS Catalog which are annual climatologies
+
+direct link:  https://www.ncei.noaa.gov/thredds-ocean/catalog/ncei/woa/oxygen/all/1.00/catalog.html?dataset=ncei/woa/oxygen/all/1.00/woa18_all_o00_01.nc
+
++info: https://www.ncei.noaa.gov/data/oceans/woa/WOA18/DOC/woa18documentation.pdf
+
+```{r}
+# Reading netcdf in raster format
+o2_3d <- brick(here::here("data", "raw_data", "variables", "DO", "woa18_all_o00_01.nc"))
+
+# Check extent and resolution
+o2_3d
+
+# Resample to match extent/resolution of bathy_atl
+o2_3d<- resample(o2_3d,bathy_atl, resample='bilinear')
+
+# Check new extent and resolution 
+o2_3d
+
+# Keep data until 1000 meters depth
+idx <- names(o2_3d)[as.numeric(substring(names(o2_3d), 2)) < 1050]
+o2_3d_1000 <- raster::subset(o2_3d, idx)
+
+# Check new extent and resolution 
+o2_3d_1000
+
+# mask to the study area
+o2_3d_1000 <- mask(o2_3d_1000, FAO_Atl_dissolved)
+
+# create DO top layer raster 
+o2sup<-raster(o2_3d_1000, layer=1) 
+
+# Plot 
+plot(o2sup)
+
+# save RData
+save(o2sup, o2_3d_1000,file= here::here ("data", "derived_data", "variables", "DO","DO.RData"))
+
+#save raster
+writeRaster(o2sup, 
+            filename= here::here ("data", "derived_data", "outputs_for_modelling", "variables", "o2sup.tif"),
+            format="GTiff",
+            overwrite=TRUE)
+# save brick
+writeRaster(o2_3d_1000, 
+            filename=here::here ("data", "derived_data", "outputs_for_modelling", "variables","o2_3d_1000.tif"),
+            format="GTiff", 
+            overwrite=TRUE,
+            options=c("INTERLEAVE=BAND","COMPRESS=LZW"))
+
+```
+
+##### 5. Salinity (unitless)
+
+We first manually download the data in netcdf format from World Ocean Atlas (WOA): https://www.ncei.noaa.gov/access/world-ocean-atlas-2018/
+select: Netcdf, 1/4º period 1981-2010 and 00_ file from THREDDS Catalog which are annual climatologies
+
+direct link:  https://www.ncei.noaa.gov/thredds-ocean/catalog/ncei/woa/salinity/decav81B0/0.25/catalog.html?dataset=ncei/woa/salinity/decav81B0/0.25/woa18_decav81B0_s00_04.nc
+
++info: https://www.ncei.noaa.gov/data/oceans/woa/WOA18/DOC/woa18documentation.pdf
+
+```{r}
+# Reading netcdf in raster format
+sal_3d <- brick(here::here("data", "raw_data", "variables", "SAL", "woa18_decav81B0_s00_04.nc"))
+
+# Check extent and resolution
+sal_3d
+
+# Resample to match extent/resolution of bathy_atl
+sal_3d<- resample(sal_3d,bathy_atl, resample='bilinear')
+
+# Check new extent and resolution 
+sal_3d
+
+# Keep data until 1000 meters depth
+idx <- names(sal_3d)[as.numeric(substring(names(sal_3d), 2)) < 1050]
+sal_3d_1000 <- raster::subset(sal_3d, idx)
+
+# Check new extent and resolution 
+sal_3d_1000
+
+# mask to the study area
+sal_3d_1000 <- mask(sal_3d_1000, FAO_Atl_dissolved)
+
+# create sal top layer raster 
+salsup<-raster(sal_3d_1000, layer=1) 
+
+# Plot 
+plot(salsup)
+
+# save RData
+save(salsup,sal_3d_1000,file= here::here ("data", "derived_data", "variables", "SAL", "sal.RData"))
+
+#save raster
+writeRaster(salsup, 
+            filename= here::here ("data", "derived_data", "outputs_for_modelling", "variables", "salsup.tif"),
+            format="GTiff",
+            overwrite=TRUE)
+#save brick
+writeRaster(sal_3d_1000, 
+            filename=here::here ("data", "derived_data", "outputs_for_modelling", "variables","sal_3d_1000.tif"),
+            format="GTiff", 
+            overwrite=TRUE,
+            options=c("INTERLEAVE=BAND","COMPRESS=LZW"))
+```
+
+##### 6. Temperature (ºC)
+
+We first manually download the data in netcdf format from World Ocean Atlas (WOA): https://www.ncei.noaa.gov/access/world-ocean-atlas-2018/
+select: Netcdf, 1/4º period 1981-2010 and 00_ file from THREDDS Catalog which are annual climatologies
+
+direct link:  https://www.ncei.noaa.gov/thredds-ocean/catalog/ncei/woa/temperature/decav81B0/0.25/catalog.html?dataset=ncei/woa/temperature/decav81B0/0.25/woa18_decav81B0_t00_04.nc
+
+
++info: https://www.ncei.noaa.gov/data/oceans/woa/WOA18/DOC/woa18documentation.pdf
+
+```{r}
+# Reading netcdf in raster format
+temp_3d <- brick(here::here("data", "raw_data", "variables", "TEMP", "woa18_decav81B0_t00_04.nc"))
+
+# Check extent and resolution
+temp_3d
+
+# Resample to match extent/resolution of bathy_atl
+temp_3d<- resample(temp_3d,bathy_atl, resample='bilinear')
+
+# Check new extent and resolution 
+temp_3d
+
+# Keep data until 1000 meters depth
+idx <- names(temp_3d)[as.numeric(substring(names(temp_3d), 2)) < 1050]
+temp_3d_1000 <- raster::subset(temp_3d, idx)
+
+# Check new extent and resolution 
+temp_3d_1000
+
+# mask to the study area
+temp_3d_1000 <- mask(temp_3d_1000, FAO_Atl_dissolved)
+
+# create temp top layer raster 
+tempsup<-raster(temp_3d_1000, layer=1) 
+
+# Plot 
+plot(tempsup)
+
+# save RData
+save(tempsup,temp_3d_1000,file= here::here ("data", "derived_data", "variables",  "TEMP", "temp.RData"))
+
+#save raster
+writeRaster(tempsup, 
+            filename= here::here ("data", "derived_data", "outputs_for_modelling", "variables", "tempsup.tif"),
+            format="GTiff",
+            overwrite=TRUE)
+#save brick
+writeRaster(temp_3d_1000, 
+            filename=here::here ("data", "derived_data", "outputs_for_modelling", "variables","temp_3d_1000.tif"),
+            format="GTiff", 
+            overwrite=TRUE,
+            options=c("INTERLEAVE=BAND","COMPRESS=LZW"))
+```
+
+##### 7. Net Primary Productivity (chlla mg m-3)
+
+We first manually download the data in netcdf format from https://www.copernicus.eu/es, you need to create a user id and log in in order to access the data. Then you have to install Filezilla, ftp app. The product identifier: GLOBAL_MULTIYEAR_BGC_001_029 (https://resources.marine.copernicus.eu/product-detail/GLOBAL_MULTIYEAR_BGC_001_029/INFORMATION)
+
+
+Short description: The biogeochemical hindcast for global ocean is produced at Mercator-Ocean (Toulouse. France). It provides 3D biogeochemical fields for the time period 1993-2019 at 1/4 degree and on 75 vertical levels. It uses PISCES biogeochemical model (available on the NEMO[1] modelling platform). No data assimilation in this product.
+
+selected variable: net_primary_production_of_biomass_expressed_as_carbon_per_unit_volume_in_sea_water (PP) 
+
+period selected: from 1993 to 2010 
+
+Selected outputs: monthly chlorophyll 3D mean fields interpolated on a standard regular grid in NetCDF format. The simulation is performed once and for all.
+
+### Define working directory for the external drive where we have saved the NPPV data
+
+```{r}
+# give here the path for the external drive that contains the NPP files per month/year
+wd <- (here::here("D:/MISSION"))
+```
+
+
+```{r}
+# vector with years to analyse
+
+yy.vec <- 1993:2010
+
+# Loop for years to read monthly raster data and compute annual averages
+# Note that it takes time!
+
+for (yy in yy.vec){
+  print(paste("Reading files for year", yy))
+  print(Sys.time())
+  
+  # read monthly files 
+  
+  jan <- stack(list.files(file.path(wd, "data", "raw_data", "variables", "NPPV", yy), full.names = TRUE, pattern = "01.nc$"))
+  feb <- stack(list.files(file.path(wd, "data", "raw_data", "variables", "NPPV", yy), full.names = TRUE, pattern = "02.nc$"))
+  mar <- stack(list.files(file.path(wd, "data", "raw_data", "variables", "NPPV", yy), full.names = TRUE, pattern = "03.nc$"))
+  apr <- stack(list.files(file.path(wd, "data", "raw_data", "variables", "NPPV", yy), full.names = TRUE, pattern = "04.nc$"))
+  may <- stack(list.files(file.path(wd, "data", "raw_data", "variables", "NPPV", yy), full.names = TRUE, pattern = "05.nc$"))
+  jun <- stack(list.files(file.path(wd, "data", "raw_data", "variables", "NPPV", yy), full.names = TRUE, pattern = "06.nc$"))
+  jul <- stack(list.files(file.path(wd, "data", "raw_data", "variables", "NPPV", yy), full.names = TRUE, pattern = "07.nc$"))
+  aug <- stack(list.files(file.path(wd, "data", "raw_data", "variables", "NPPV", yy), full.names = TRUE, pattern = "08.nc$"))
+  sep <- stack(list.files(file.path(wd, "data", "raw_data", "variables", "NPPV", yy), full.names = TRUE, pattern = "09.nc$"))
+  oct <- stack(list.files(file.path(wd, "data", "raw_data", "variables", "NPPV", yy), full.names = TRUE, pattern = "10.nc$"))
+  nov <- stack(list.files(file.path(wd, "data", "raw_data", "variables", "NPPV", yy), full.names = TRUE, pattern = "11.nc$"))
+  dec <- stack(list.files(file.path(wd, "data", "raw_data", "variables", "NPPV", yy), full.names = TRUE, pattern = "12.nc$"))
+
+  # keep data until 1000 meters depth. we assume all the files have the same structure as january
+  idx <- names(jan)[as.numeric(substring(names(jan), 2)) < 1050]
+
+  jan <- raster::subset(jan, idx)
+  feb <- raster::subset(feb, idx)
+  mar <- raster::subset(mar, idx)
+  apr <- raster::subset(apr, idx)
+  may <- raster::subset(may, idx)
+  jun <- raster::subset(jun, idx)
+  jul <- raster::subset(jul, idx)
+  aug <- raster::subset(aug, idx)
+  sep <- raster::subset(sep, idx)
+  oct <- raster::subset(oct, idx)
+  nov <- raster::subset(nov, idx)
+  dec <- raster::subset(dec, idx)
+
+  # average per year (aprox 1 or 2 min)
+  out <- (jan+feb+mar+apr+may+jun+jul+aug+sep+oct+nov+dec)/12
+  
+  # month.stack <- list(jan, feb, mar, apr, may, jun, jul, aug, sep, oct, nov, dec)
+  # out <- do.call("+", month.stack)
+  
+  # keep original layer names (i.e. keep info on depth in names)
+  names(out) <- names(jan)
+  
+  # Resample to match extent/resolution of bathy_atl. 
+  
+  out <- resample(out, bathy_atl, resample='bilinear')
+  
+  # save with proper name
+  assign(paste0("npp_",yy), out)
+  
+  # save yearly average in an external file
+  writeRaster(out, 
+              filename=file.path(wd, "data", "derived_data", "variables", "NPPV", yy, paste("npp",yy,"average.tif",sep="_")),
+              format="GTiff", 
+              overwrite=TRUE,
+              options=c("INTERLEAVE=BAND","COMPRESS=LZW"))
+
+} # end of loop for years
+
+
+# list of annual average stacks (get objects from named vector)
+
+ave.stack <- lapply(as.list(paste0("npp_",yy.vec)), "get")
+
+# compute the average of years
+
+#tmp <- do.call("+", ave.stack) I got and error in "+"
+
+tmp <- (npp_1993 + npp_1994 + npp_1995 + npp_1996 + npp_1997 + npp_1998 + npp_1999 + npp_2000 + npp_2001 + npp_2002 + npp_2003 + npp_2004 + npp_2005 + npp_2006 + npp_2006 + npp_2007 + npp_2008 + npp_2009 + npp_2010)
+
+tmp <- tmp/length(ave.stack) 
+
+names(tmp) <- names(out)
+npp_1000 <- tmp 
+
+# Check new extent and resolution 
+npp_1000
+names(npp_1000)
+
+# mask to the study area
+npp_1000 <- mask(npp_1000, FAO_Atl_dissolved)
+
+#plot
+plot(npp_1000)
+
+#NPP depth levels and the depth levels from the rest of 3D variables are different, we need to interpolate the npp values to match the 47 depth levels. 
+
+#create a vector with woa standard depth levels
+
+depth <- c (0,5,10,15,20,25,30,35,40,45,50,55,60,65,70,75,80,85,90,95,100,125,150,175,200,225,250,275,300,325,350,375,400,425,450,475,500,550,600,650,700,750,800,850,900,95,1000)
+
+# create a vector with npp depth levels
+
+levels.npp <- c(0.5057600140571594,1.5558550357818604,2.667681932449341,3.8562800884246826,5.1403608322143555,6.543034076690674,8.09251880645752,9.822750091552734,11.773679733276367,13.991040229797363,16.525320053100586,19.429800033569336,22.757619857788086,26.558300018310547,30.87455940246582,35.74020004272461,41.18001937866211,47.211891174316406,53.85063934326172,61.11283874511719,69.02168273925781,77.61116027832031,86.92942810058594,97.04131317138672,108.0302963256836,120,133.0758056640625,147.4062042236328,163.1645050048828,180.54989624023438,199.7899932861328,221.14120483398438,244.89059448242188,271.3564147949219,300.88751220703125,333.86279296875,370.6885070800781,411.7939147949219,457.6256103515625,508.639892578125,565.2922973632812,628.0260009765625,697.2587280273438,773.3682861328125,856.6790161132812,947.4478759765625,1045.85400390625)
+
+# change the names in the npp object
+
+names(npp) <- paste("npp", levels.npp, sep="_")
+
+# Prepare depth and indices vectors ---------------------------------------
+
+# vector with the depth levels we wish
+
+depth1 <- depth        
+
+# vector with the depth levels in the npp object
+
+depth2 <- levels.npp
+
+# all the depths sorted
+
+depth.all <- sort(unique(c(depth1, depth2)))
+
+# indices for each depth vector in the depth.all vector
+
+idx1 <- match(depth1, depth.all)
+idx2 <- match(depth2, depth.all)
+
+# depth.all[idx1] == depth1
+# depth.all[idx2] == depth2
+
+# create a raster with all the depths -------------------------------------
+
+# create an empty raster with the same structure as npp, but with all the depth levels
+
+r <- npp[[1]]
+values(r) <- NA
+r <- stack(replicate(length(depth.all), r))
+names(r) <- paste("npp", depth.all, sep="_") 
+nlayers(r)
+r 
+
+# fill in the depth levels that are known (corresponding to depth2 in the npp)
+
+for (i in 1:length(depth2)){
+  r[[paste0("npp_",depth2[i])]] <- npp[[paste0("npp_",depth2[i])]]
+}  
+
+# complete the missing layers using the function approxNA
+# This can take 1-2 min
+
+rr <- approxNA(r, method="linear", rule=2, z=depth.all)
+names(rr) <- paste("npp", depth.all, sep="_")
+  
+# Check in a given point --------------------------------------------------
+
+# select a given point, e.g. coordinates (0,0) and check that it is doing linear interpolation across depth levels
+
+vv <- raster::extract(r, data.frame(0,0))  # raster values at (0,0) with NA's
+vv.inter <- as.vector(raster::extract(rr, data.frame(0,0)))  # raster values at (0,0) after interpolation 
+inter <- approx(depth.all, vv, xout=depth.all) # interpolation made at hand using the function approx
+data.frame(inter$y, vv.inter) # check the values are the same
+
+# Save the interpolated raster --------------------------------------------
+
+# TO BE COMPLETED save the selected layers of the rr object with the correct name and path
+
+npp.inter <- rr[[idx1]]
+
+# Create the variable npp Log (npp+1) 
+
+npp.inter_log <- log (npp.inter +1)
+
+summary (npp.inter_log)
+
+plot(npp.inter_log)
+
+# create temp top layer raster 
+npp.inter_sup_log<-raster(npp.inter_log, layer=1) 
+
+# save RData
+save(npp.inter_sup_log, npp.inter_log, file= here::here ("data", "derived_data", "variables",  "NPP", "NPP.inter_log.RData"))
+
+#save raster
+writeRaster(npp.inter_sup_log, 
+            filename= here::here ("data", "derived_data", "outputs_for_modelling", "variables", "npp.inter_sup_log.tif"),
+            format="GTiff",
+            overwrite=TRUE)
+#save brick
+
+writeRaster(npp.inter_log, 
+            filename=here::here ("data", "derived_data", "outputs_for_modelling",  "variables","npp.inter_log.tif"),
+            format="GTiff", 
+            overwrite=TRUE,
+            options=c("INTERLEAVE=BAND","COMPRESS=LZW"))
+
+```
+
+Generate 3D data for bathymetry and mld
+
+## First create a df with the 47 depth levels
+```{r}
+#read temp 3D as a template
+
+#temp_3d_1000 <- brick(here::here("data", "derived_data", "outputs_for_modelling","variables","temp_3d_1000.tif"))
+
+
+# generate a table with the 47 depth levels
+depth_grid_df <- as.data.frame(temp_3d_1000, xy = TRUE) %>% 
+  dplyr::select (x,y) %>% 
+  dplyr::mutate (layer0 = 0) %>% 
+  dplyr::mutate (layer5 = 5) %>% 
+  dplyr::mutate (layer10 = 10) %>% 
+  dplyr::mutate (layer15 = 15) %>% 
+  dplyr::mutate (layer20 = 20) %>% 
+  dplyr::mutate (layer25 = 25) %>% 
+  dplyr::mutate (layer30 = 30) %>% 
+  dplyr::mutate (layer35 = 35) %>% 
+  dplyr::mutate (layer40 = 40) %>% 
+  dplyr::mutate (layer45 = 45) %>% 
+  dplyr::mutate (layer50 = 50) %>% 
+  dplyr::mutate (layer55 = 55) %>% 
+  dplyr::mutate (layer60 = 60) %>% 
+  dplyr::mutate (layer65 = 65) %>% 
+  dplyr::mutate (layer70 = 70) %>% 
+  dplyr::mutate (layer75 = 75) %>%
+  dplyr::mutate (layer80 = 80) %>%
+  dplyr::mutate (layer85 = 85) %>%
+  dplyr::mutate (layer90 = 90) %>%
+  dplyr::mutate (layer95 = 95) %>%
+  dplyr::mutate (layer100 = 100) %>%
+  dplyr::mutate (layer125 = 125) %>%
+  dplyr::mutate (layer150 = 150) %>%
+  dplyr::mutate (layer175 = 175) %>%
+  dplyr::mutate (layer200 = 200) %>%
+  dplyr::mutate (layer225 = 225) %>%
+  dplyr::mutate (layer250 = 250) %>%
+  dplyr::mutate (layer275 = 275) %>%
+  dplyr::mutate (layer300 = 300) %>%
+  dplyr::mutate (layer325 = 325) %>%
+  dplyr::mutate (layer350 = 350) %>%
+  dplyr::mutate (layer375 = 375) %>%
+  dplyr::mutate (layer400 = 400) %>%
+  dplyr::mutate (layer425 = 425) %>%
+  dplyr::mutate (layer450 = 450) %>%
+  dplyr::mutate (layer475 = 475) %>%
+  dplyr::mutate (layer500 = 500) %>%
+  dplyr::mutate (layer550 = 550) %>%
+  dplyr::mutate (layer600 = 600) %>%
+  dplyr::mutate (layer650 = 650) %>%
+  dplyr::mutate (layer700 = 700) %>%
+  dplyr::mutate (layer750 = 750) %>%
+  dplyr::mutate (layer800 = 800) %>%
+  dplyr::mutate (layer850 = 850) %>%
+  dplyr::mutate (layer900 = 900) %>%
+  dplyr::mutate (layer950 = 950) %>%
+  dplyr::mutate (layer1000 = 1000)
+```
+
+## Code to create Distance to seabed based on bathymetry data
+```{r}
+#bathy
+
+bathy.df <- as.data.frame(bathy_atl, xy = TRUE)
+
+summary (bathy.df)
+
+bathy.df <- bathy.df %>% 
+  #change name a convert to positive number
+  dplyr::mutate (m = -layer) %>% 
+  dplyr::select (x, y, m)
+
+colnames (bathy.df) <- c("x1", "y1", "m")
+
+# join depth levels and bathymetry data 
+
+bathy_and_depth <- cbind (bathy.df, depth_grid_df)
+
+head (bathy_and_depth)
+
+#drop NA values from bathymetry data
+bathy_and_depth <- bathy_and_depth %>% 
+  drop_na(m)
+
+#plot 
+ggplot() +
+  geom_polygon(data = FAO_Atl_dissolved, aes(x = long, y = lat, group = group), colour = "black", fill = NA)+
+    geom_point(data = bathy_and_depth, aes(x = x, y = y, colour= blue), size = 1, colour = "blue") +
+    coord_sf(xlim=c(-98,68.5), ylim=c(-83,90)) +
+  ggtitle("")+
+  theme(plot.title = element_text(size=12))
+
+#create dist to seabed variable by subtracting the meters at which each layer is located to the bathymetry value at point xy.
+#** this calculation generates negative values where the bathymetry value is less than the meters of the the depth layer. e.g bathymetry data along the coast is 200 meters and when calculating distance to seabed from 1000 m depth layer the result is 200 - 1000 = -800 m. We will solve this issue only selecting values => 0 from the calculated field.  
+
+dist_seabed <- bathy_and_depth %>% 
+  #dist_seabed
+  dplyr::mutate (dist_seabed_sup = m - layer0) %>% 
+  dplyr::mutate (dist_seabed_5 = m - layer5) %>% 
+  dplyr::mutate (dist_seabed_10 = m - layer10) %>% 
+  dplyr::mutate (dist_seabed_15 = m - layer15) %>% 
+  dplyr::mutate (dist_seabed_20 = m - layer20) %>% 
+  dplyr::mutate (dist_seabed_25 = m - layer25) %>% 
+  dplyr::mutate (dist_seabed_30 = m - layer30) %>% 
+  dplyr::mutate (dist_seabed_35 = m - layer35) %>% 
+  dplyr::mutate (dist_seabed_40 = m - layer40) %>% 
+  dplyr::mutate (dist_seabed_45 = m - layer45) %>% 
+  dplyr::mutate (dist_seabed_50 = m - layer50) %>% 
+  dplyr::mutate (dist_seabed_55 = m - layer55) %>% 
+  dplyr::mutate (dist_seabed_60 = m - layer60) %>% 
+  dplyr::mutate (dist_seabed_65 = m - layer65) %>% 
+  dplyr::mutate (dist_seabed_70 = m - layer70) %>% 
+  dplyr::mutate (dist_seabed_75 = m - layer75) %>%
+  dplyr::mutate (dist_seabed_80 = m - layer80) %>%
+  dplyr::mutate (dist_seabed_85 = m - layer85) %>%
+  dplyr::mutate (dist_seabed_90 = m - layer90) %>%
+  dplyr::mutate (dist_seabed_95 = m - layer95) %>%
+  dplyr::mutate (dist_seabed_100 = m - layer100) %>%
+  dplyr::mutate (dist_seabed_125 = m - layer125) %>%
+  dplyr::mutate (dist_seabed_150 = m - layer150) %>%
+  dplyr::mutate (dist_seabed_175 = m - layer175) %>%
+  dplyr::mutate (dist_seabed_200 = m - layer200) %>%
+  dplyr::mutate (dist_seabed_225 = m - layer225) %>%
+  dplyr::mutate (dist_seabed_250 = m - layer250) %>%
+  dplyr::mutate (dist_seabed_275 = m - layer275) %>%
+  dplyr::mutate (dist_seabed_300 = m - layer300) %>%
+  dplyr::mutate (dist_seabed_325 = m - layer325) %>%
+  dplyr::mutate (dist_seabed_350 = m - layer350) %>%
+  dplyr::mutate (dist_seabed_375 = m - layer375) %>%
+  dplyr::mutate (dist_seabed_400 = m - layer400) %>%
+  dplyr::mutate (dist_seabed_425 = m - layer425) %>%
+  dplyr::mutate (dist_seabed_450 = m - layer450) %>%
+  dplyr::mutate (dist_seabed_475 = m - layer475) %>%
+  dplyr::mutate (dist_seabed_500 = m - layer500) %>%
+  dplyr::mutate (dist_seabed_550 = m - layer550) %>%
+  dplyr::mutate (dist_seabed_600 = m - layer600) %>%
+  dplyr::mutate (dist_seabed_650 = m - layer650) %>%
+  dplyr::mutate (dist_seabed_700 = m - layer700) %>%
+  dplyr::mutate (dist_seabed_750 = m - layer750) %>%
+  dplyr::mutate (dist_seabed_800 = m - layer800) %>%
+  dplyr::mutate (dist_seabed_850 = m - layer850) %>%
+  dplyr::mutate (dist_seabed_900 = m - layer900) %>%
+  dplyr::mutate (dist_seabed_950 = m - layer950) %>%
+  dplyr::mutate (dist_seabed_1000 = m - layer1000)
+
+
+# create a df with xy and values for each depth level, we will use this df to create a raster per depth level and then create a raster brick as for the other 3D variables.
+dist_seabed_3d_1000.df <- dist_seabed %>% 
+  dplyr::select (x,y, dist_seabed_sup, 
+                           dist_seabed_5, 
+                           dist_seabed_10,
+                           dist_seabed_15, 
+                           dist_seabed_20, 
+                           dist_seabed_25,
+                           dist_seabed_30, 
+                           dist_seabed_35, 
+                           dist_seabed_40, 
+                           dist_seabed_45, 
+                           dist_seabed_50, 
+                           dist_seabed_55,
+                           dist_seabed_60, 
+                           dist_seabed_65,  
+                           dist_seabed_70,
+                           dist_seabed_75, 
+                           dist_seabed_80, 
+                           dist_seabed_85, 
+                           dist_seabed_90, 
+                           dist_seabed_95, 
+                           dist_seabed_100,  
+                           dist_seabed_125, 
+                           dist_seabed_150, 
+                           dist_seabed_175, 
+                           dist_seabed_200, 
+                           dist_seabed_225,  
+                           dist_seabed_250, 
+                           dist_seabed_275,  
+                           dist_seabed_300, 
+                           dist_seabed_325, 
+                           dist_seabed_350,
+                           dist_seabed_375, 
+                           dist_seabed_400, 
+                           dist_seabed_425, 
+                           dist_seabed_450, 
+                           dist_seabed_475, 
+                           dist_seabed_500, 
+                           dist_seabed_550, 
+                           dist_seabed_600, 
+                           dist_seabed_650, 
+                           dist_seabed_700, 
+                           dist_seabed_750, 
+                           dist_seabed_800,
+                           dist_seabed_850, 
+                           dist_seabed_900, 
+                           dist_seabed_950,
+                           dist_seabed_1000)
+
+#transform to raster ------------------------
+
+#define extent 
+e<-extent(-98, 68.5, -83, 90)
+# create a raster with that extent, and the number of rows and colums 
+s<-raster(e, nrows=692, ncols=666, crs=bathy_atl@crs)
+
+#superficial depth layer
+
+#select xy and the values generated subtracting 0 m to bathymetry data
+dist_seabed_sup.df <- dist_seabed_3d_1000.df  %>% 
+  dplyr::select (x,y, dist_seabed_sup)
+
+#transform to raster
+dist_seabed_sup.r <- rasterFromXYZ (dist_seabed_sup.df)
+plot(dist_seabed_sup.r)
+
+#resample to bathy data to match the resolution and extent of all variables
+
+dist_seabed_sup.r <-resample(dist_seabed_sup.r , s, method="ngb")
+
+#plot to confirm that is mapping the bathymetry
+plot(dist_seabed_sup.r)
+
+#5m
+
+dist_seabed_5.df <- dist_seabed_3d_1000.df  %>% 
+  dplyr::select (x,y, dist_seabed_5) %>% 
+  #keep only positive values
+  dplyr::filter(dist_seabed_5>=0)
+
+dist_seabed_5.r <- rasterFromXYZ (dist_seabed_5.df)
+plot(dist_seabed_5.r)
+
+dist_seabed_5.r <- resample(dist_seabed_5.r , s, method="ngb")
+
+plot(dist_seabed_5.r)
+
+# 10   
+dist_seabed_10.df <- dist_seabed_3d_1000.df  %>% 
+  dplyr::select (x,y, dist_seabed_10) %>% 
+  dplyr::filter(dist_seabed_10>=0)
+
+dist_seabed_10.r <- rasterFromXYZ (dist_seabed_10.df)
+
+dist_seabed_10.r <- resample(dist_seabed_10.r , s, method="ngb")
+plot(dist_seabed_10.r)
+
+# 15
+dist_seabed_15.df <- dist_seabed_3d_1000.df  %>% 
+  dplyr::select (x,y, dist_seabed_15) %>% 
+  dplyr::filter(dist_seabed_15>=0)
+
+dist_seabed_15.r <- rasterFromXYZ (dist_seabed_15.df, res=c(0.25,0.25), crs="+proj=longlat +datum=WGS84", digits=5)
+
+#resample
+dist_seabed_15.r<-resample(dist_seabed_15.r, s, method="ngb")
+plot(dist_seabed_15.r)
+
+# 20  
+dist_seabed_20.df <- dist_seabed_3d_1000.df  %>% 
+  dplyr::select (x,y, dist_seabed_20) %>% 
+  dplyr::filter(dist_seabed_20>=0)
+
+dist_seabed_20.r <- rasterFromXYZ (dist_seabed_20.df, res=c(0.25,0.25), crs="+proj=longlat +datum=WGS84", digits=5)
+dist_seabed_20.r <-resample(dist_seabed_20.r,s, method="ngb")
+plot(dist_seabed_20.r)
+
+# 25
+dist_seabed_25.df <- dist_seabed_3d_1000.df  %>% 
+  dplyr::select (x,y, dist_seabed_25) %>% 
+  dplyr::filter(dist_seabed_25>=0)
+dist_seabed_25.r <- rasterFromXYZ (dist_seabed_25.df)
+dist_seabed_25.r <-resample(dist_seabed_25.r,  s, method="ngb")
+plot(dist_seabed_25.r)
+
+# 30   
+dist_seabed_30.df <- dist_seabed_3d_1000.df  %>% 
+  dplyr::select (x,y, dist_seabed_30) %>% 
+  dplyr::filter(dist_seabed_30>=0)
+dist_seabed_30.r <- rasterFromXYZ (dist_seabed_30.df)
+dist_seabed_30.r <- resample(dist_seabed_30.r,  s, method="ngb")
+plot(dist_seabed_30.r)
+
+# 35 
+dist_seabed_35.df <- dist_seabed_3d_1000.df  %>% 
+  dplyr::select (x,y, dist_seabed_35) %>% 
+  dplyr::filter(dist_seabed_35>=0)
+dist_seabed_35.r <- rasterFromXYZ (dist_seabed_35.df)
+dist_seabed_35.r <- resample(dist_seabed_35.r,  s, method="ngb")
+plot(dist_seabed_35.r)
+
+# 40
+dist_seabed_40.df <- dist_seabed_3d_1000.df  %>% 
+  dplyr::select (x,y, dist_seabed_40) %>% 
+  dplyr::filter(dist_seabed_40>=0)
+dist_seabed_40.r <- rasterFromXYZ (dist_seabed_40.df)
+dist_seabed_40.r <-resample(dist_seabed_40.r,  s, method="ngb")
+plot(dist_seabed_40.r)
+
+# 45
+dist_seabed_45.df <- dist_seabed_3d_1000.df  %>% 
+  dplyr::select (x,y, dist_seabed_45) %>% 
+  dplyr::filter(dist_seabed_45>=0)
+dist_seabed_45.r <- rasterFromXYZ (dist_seabed_45.df)
+dist_seabed_45.r <-resample(dist_seabed_45.r,  s, method="ngb")
+plot(dist_seabed_45.r)
+
+# 50
+dist_seabed_50.df <- dist_seabed_3d_1000.df  %>% 
+  dplyr::select (x,y, dist_seabed_50) %>% 
+  dplyr::filter(dist_seabed_50>=0)
+dist_seabed_50.r <- rasterFromXYZ (dist_seabed_50.df)
+dist_seabed_50.r <- resample(dist_seabed_50.r,  s, method="ngb")
+plot(dist_seabed_50.r)
+
+# 55
+dist_seabed_55.df <- dist_seabed_3d_1000.df  %>% 
+  dplyr::select (x,y, dist_seabed_55) %>% 
+  dplyr::filter(dist_seabed_55>=0)
+dist_seabed_55.r <- rasterFromXYZ (dist_seabed_55.df)
+dist_seabed_55.r <- resample(dist_seabed_55.r,  s, method="ngb")
+plot(dist_seabed_55.r)
+
+# 60
+dist_seabed_60.df <- dist_seabed_3d_1000.df  %>% 
+  dplyr::select (x,y, dist_seabed_60) %>% 
+  dplyr::filter(dist_seabed_60>=0)
+dist_seabed_60.r <- rasterFromXYZ (dist_seabed_60.df)
+dist_seabed_60.r <-resample(dist_seabed_60.r,  s, method="ngb")
+plot(dist_seabed_60.r)
+
+# 65
+dist_seabed_65.df <- dist_seabed_3d_1000.df  %>% 
+  dplyr::select (x,y, dist_seabed_65) %>% 
+  dplyr::filter(dist_seabed_65>=0)
+dist_seabed_65.r <- rasterFromXYZ (dist_seabed_65.df)
+dist_seabed_65.r <-resample(dist_seabed_65.r,  s, method="ngb")
+plot(dist_seabed_65.r)
+
+# 70
+dist_seabed_70.df <- dist_seabed_3d_1000.df  %>% 
+  dplyr::select (x,y, dist_seabed_70) %>% 
+  dplyr::filter(dist_seabed_70>=0)
+dist_seabed_70.r <- rasterFromXYZ (dist_seabed_70.df)
+dist_seabed_70.r <- resample(dist_seabed_70.r,  s, method="ngb")
+plot(dist_seabed_70.r)
+
+# 75
+dist_seabed_75.df <- dist_seabed_3d_1000.df  %>% 
+  dplyr::select (x,y, dist_seabed_75) %>% 
+  dplyr::filter(dist_seabed_75>=0)
+dist_seabed_75.r <- rasterFromXYZ (dist_seabed_75.df)
+dist_seabed_75.r <- resample(dist_seabed_75.r,  s, method="ngb")
+plot(dist_seabed_75.r)
+
+# 80
+dist_seabed_80.df <- dist_seabed_3d_1000.df  %>% 
+  dplyr::select (x,y, dist_seabed_80) %>% 
+  dplyr::filter(dist_seabed_80>=0)
+dist_seabed_80.r <- rasterFromXYZ (dist_seabed_80.df)
+dist_seabed_80.r <- resample(dist_seabed_80.r,  s, method="ngb")
+plot(dist_seabed_80.r)
+
+# 85
+dist_seabed_85.df <- dist_seabed_3d_1000.df  %>% 
+  dplyr::select (x,y, dist_seabed_85) %>% 
+  dplyr::filter(dist_seabed_85>=0)
+dist_seabed_85.r <- rasterFromXYZ (dist_seabed_85.df)
+dist_seabed_85.r <- resample(dist_seabed_85.r,  s, method="ngb")
+plot(dist_seabed_85.r)
+
+# 90
+dist_seabed_90.df <- dist_seabed_3d_1000.df  %>% 
+  dplyr::select (x,y, dist_seabed_90) %>% 
+  dplyr::filter(dist_seabed_90>=0)
+dist_seabed_90.r <- rasterFromXYZ (dist_seabed_90.df)
+dist_seabed_90.r <- resample(dist_seabed_90.r,  s, method="ngb")
+plot(dist_seabed_90.r)
+
+# 95
+dist_seabed_95.df <- dist_seabed_3d_1000.df  %>% 
+  dplyr::select (x,y, dist_seabed_95) %>% 
+  dplyr::filter(dist_seabed_95>=0)
+dist_seabed_95.r <- rasterFromXYZ (dist_seabed_95.df)
+dist_seabed_95.r <- resample(dist_seabed_95.r,  s, method="ngb")
+plot(dist_seabed_95.r)
+
+# 100 
+dist_seabed_100.df <- dist_seabed_3d_1000.df  %>% 
+  dplyr::select (x,y, dist_seabed_100) %>% 
+  dplyr::filter(dist_seabed_100>=0)
+dist_seabed_100.r <- rasterFromXYZ (dist_seabed_100.df)
+dist_seabed_100.r <-resample(dist_seabed_100.r,  s, method="ngb")
+plot(dist_seabed_100.r)
+
+# 125
+dist_seabed_125.df <- dist_seabed_3d_1000.df  %>% 
+  dplyr::select (x,y, dist_seabed_125) %>% 
+  dplyr::filter(dist_seabed_125>=0)
+dist_seabed_125.r <- rasterFromXYZ (dist_seabed_125.df)
+dist_seabed_125.r <- resample(dist_seabed_125.r,  s, method="ngb")
+plot(dist_seabed_125.r)
+
+# 150
+dist_seabed_150.df <- dist_seabed_3d_1000.df  %>% 
+  dplyr::select (x,y, dist_seabed_150) %>% 
+  dplyr::filter(dist_seabed_150>=0)
+dist_seabed_150.r <- rasterFromXYZ (dist_seabed_150.df)
+dist_seabed_150.r <- resample(dist_seabed_150.r,  s, method="ngb")
+plot(dist_seabed_150.r)
+
+# 175
+dist_seabed_175.df <- dist_seabed_3d_1000.df  %>% 
+  dplyr::select (x,y, dist_seabed_175) %>% 
+  dplyr::filter(dist_seabed_175>=0)
+dist_seabed_175.r <- rasterFromXYZ (dist_seabed_175.df)
+dist_seabed_175.r <- resample(dist_seabed_175.r,  s, method="ngb")
+plot(dist_seabed_175.r)
+
+# 200
+dist_seabed_200.df <- dist_seabed_3d_1000.df  %>% 
+  dplyr::select (x,y, dist_seabed_200) %>% 
+  dplyr::filter(dist_seabed_200>=0)
+dist_seabed_200.r <- rasterFromXYZ (dist_seabed_200.df)
+dist_seabed_200.r <- resample(dist_seabed_200.r,  s, method="ngb")
+plot(dist_seabed_200.r)
+
+# 225
+dist_seabed_225.df <- dist_seabed_3d_1000.df  %>% 
+  dplyr::select (x,y, dist_seabed_225) %>% 
+  dplyr::filter(dist_seabed_225>=0)
+dist_seabed_225.r <- rasterFromXYZ (dist_seabed_225.df)
+dist_seabed_225.r <- resample(dist_seabed_225.r,  s, method="ngb")
+plot(dist_seabed_225.r)
+
+# 250
+dist_seabed_250.df <- dist_seabed_3d_1000.df  %>% 
+  dplyr::select (x,y, dist_seabed_250) %>% 
+  dplyr::filter(dist_seabed_250>=0)
+dist_seabed_250.r <- rasterFromXYZ (dist_seabed_250.df)
+dist_seabed_250.r <-resample(dist_seabed_250.r,  s, method="ngb")
+plot(dist_seabed_250.r)
+
+# 275
+dist_seabed_275.df <- dist_seabed_3d_1000.df  %>% 
+  dplyr::select (x,y, dist_seabed_275) %>% 
+  dplyr::filter(dist_seabed_275>=0)
+dist_seabed_275.r <- rasterFromXYZ (dist_seabed_275.df)
+dist_seabed_275.r <- resample(dist_seabed_275.r,  s, method="ngb")
+plot(dist_seabed_275.r)
+
+# 300
+dist_seabed_300.df <- dist_seabed_3d_1000.df  %>% 
+  dplyr::select (x,y, dist_seabed_300) %>% 
+  dplyr::filter(dist_seabed_300>=0)
+dist_seabed_300.r <- rasterFromXYZ (dist_seabed_300.df)
+dist_seabed_300.r <- resample(dist_seabed_300.r,  s, method="ngb")
+plot(dist_seabed_300.r)
+
+# 325  
+dist_seabed_325.df <- dist_seabed_3d_1000.df  %>% 
+  dplyr::select (x,y, dist_seabed_325) %>% 
+  dplyr::filter(dist_seabed_325>=0)
+dist_seabed_325.r <- rasterFromXYZ (dist_seabed_325.df)
+dist_seabed_325.r <-resample(dist_seabed_325.r,  s, method="ngb")
+plot(dist_seabed_325.r)
+
+# 350
+dist_seabed_350.df <- dist_seabed_3d_1000.df  %>% 
+  dplyr::select (x,y, dist_seabed_350) %>% 
+  dplyr::filter(dist_seabed_350>=0)
+dist_seabed_350.r <- rasterFromXYZ (dist_seabed_350.df)
+dist_seabed_350.r <- resample(dist_seabed_350.r,  s, method="ngb")
+plot(dist_seabed_350.r)
+
+# 375  
+dist_seabed_375.df <- dist_seabed_3d_1000.df  %>% 
+  dplyr::select (x,y, dist_seabed_375) %>% 
+  dplyr::filter(dist_seabed_375>=0)
+dist_seabed_375.r <- rasterFromXYZ (dist_seabed_375.df)
+dist_seabed_375.r <-resample(dist_seabed_375.r,  s, method="ngb")
+plot(dist_seabed_375.r)
+
+# 400  
+dist_seabed_400.df <- dist_seabed_3d_1000.df  %>% 
+  dplyr::select (x,y, dist_seabed_400) %>% 
+  dplyr::filter(dist_seabed_400>=0)
+dist_seabed_400.r <- rasterFromXYZ (dist_seabed_400.df)
+dist_seabed_400.r <- resample(dist_seabed_400.r,  s, method="ngb")
+plot(dist_seabed_400.r)
+
+# 425
+dist_seabed_425.df <- dist_seabed_3d_1000.df  %>% 
+  dplyr::select (x,y, dist_seabed_425) %>% 
+  dplyr::filter(dist_seabed_425>=0)
+dist_seabed_425.r <- rasterFromXYZ (dist_seabed_425.df)
+dist_seabed_425.r <- resample(dist_seabed_425.r,  s, method="ngb")
+plot(dist_seabed_425.r)
+
+# 450  
+dist_seabed_450.df <- dist_seabed_3d_1000.df  %>% 
+  dplyr::select (x,y, dist_seabed_450) %>% 
+  dplyr::filter(dist_seabed_450>=0)
+dist_seabed_450.r <- rasterFromXYZ (dist_seabed_450.df)
+dist_seabed_450.r <-resample(dist_seabed_450.r,  s, method="ngb")
+plot(dist_seabed_450.r)
+
+# 475
+dist_seabed_475.df <- dist_seabed_3d_1000.df  %>% 
+  dplyr::select (x,y, dist_seabed_475) %>% 
+  dplyr::filter(dist_seabed_475>=0)
+dist_seabed_475.r <- rasterFromXYZ (dist_seabed_475.df)
+dist_seabed_475.r <-resample(dist_seabed_475.r,  s, method="ngb")
+plot(dist_seabed_475.r)
+
+# 500
+dist_seabed_500.df <- dist_seabed_3d_1000.df  %>% 
+  dplyr::select (x,y, dist_seabed_500) %>% 
+  dplyr::filter(dist_seabed_500>=0)
+dist_seabed_500.r <- rasterFromXYZ (dist_seabed_500.df)
+dist_seabed_500.r <- resample(dist_seabed_500.r,  s, method="ngb")
+plot(dist_seabed_500.r)
+
+# 550
+dist_seabed_550.df <- dist_seabed_3d_1000.df  %>% 
+  dplyr::select (x,y, dist_seabed_550) %>% 
+  dplyr::filter(dist_seabed_550>=0)
+dist_seabed_550.r <- rasterFromXYZ (dist_seabed_550.df)
+dist_seabed_550.r <-resample(dist_seabed_550.r,  s, method="ngb")
+plot(dist_seabed_550.r)
+
+# 600
+dist_seabed_600.df <- dist_seabed_3d_1000.df  %>% 
+  dplyr::select (x,y, dist_seabed_600) %>% 
+  dplyr::filter(dist_seabed_600>=0)
+dist_seabed_600.r <- rasterFromXYZ (dist_seabed_600.df)
+dist_seabed_600.r <- resample(dist_seabed_600.r,  s, method="ngb")
+plot(dist_seabed_600.r)
+
+# 650
+dist_seabed_650.df <- dist_seabed_3d_1000.df  %>% 
+  dplyr::select (x,y, dist_seabed_650) %>% 
+  dplyr::filter(dist_seabed_650>=0)
+dist_seabed_650.r <- rasterFromXYZ (dist_seabed_650.df)
+dist_seabed_650.r <- resample(dist_seabed_650.r,  s, method="ngb")
+plot(dist_seabed_650.r)
+
+# 700
+dist_seabed_700.df <- dist_seabed_3d_1000.df  %>% 
+  dplyr::select (x,y, dist_seabed_700) %>% 
+  dplyr::filter(dist_seabed_700>=0)
+dist_seabed_700.r <- rasterFromXYZ (dist_seabed_700.df)
+dist_seabed_700.r <- resample(dist_seabed_700.r,  s, method="ngb")
+plot(dist_seabed_700.r)
+
+# 750
+dist_seabed_750.df <- dist_seabed_3d_1000.df  %>% 
+  dplyr::select (x,y, dist_seabed_750) %>% 
+  dplyr::filter(dist_seabed_750>=0)
+dist_seabed_750.r <- rasterFromXYZ (dist_seabed_750.df)
+dist_seabed_750.r <- resample(dist_seabed_750.r,  s, method="ngb")
+plot(dist_seabed_750.r)
+
+# 800
+dist_seabed_800.df <- dist_seabed_3d_1000.df  %>% 
+  dplyr::select (x,y, dist_seabed_800) %>% 
+  dplyr::filter(dist_seabed_800>=0)
+dist_seabed_800.r <- rasterFromXYZ (dist_seabed_800.df)
+dist_seabed_800.r <-resample(dist_seabed_800.r,  s, method="ngb")
+plot(dist_seabed_800.r)
+
+# 850
+dist_seabed_850.df <- dist_seabed_3d_1000.df  %>% 
+  dplyr::select (x,y, dist_seabed_850) %>% 
+  dplyr::filter(dist_seabed_850>=0)
+dist_seabed_850.r <- rasterFromXYZ (dist_seabed_850.df)
+dist_seabed_850.r <- resample(dist_seabed_850.r,  s, method="ngb")
+plot(dist_seabed_850.r)
+
+# 900 
+dist_seabed_900.df <- dist_seabed_3d_1000.df  %>% 
+  dplyr::select (x,y, dist_seabed_900) %>% 
+  dplyr::filter(dist_seabed_900>=0)
+dist_seabed_900.r <- rasterFromXYZ (dist_seabed_900.df)
+dist_seabed_900.r <- resample(dist_seabed_900.r,  s, method="ngb")
+plot(dist_seabed_900.r)
+
+# 950
+dist_seabed_950.df <- dist_seabed_3d_1000.df  %>% 
+  dplyr::select (x,y, dist_seabed_950) %>% 
+  dplyr::filter(dist_seabed_950>=0)
+dist_seabed_950.r <- rasterFromXYZ (dist_seabed_950.df)
+dist_seabed_950.r <- resample(dist_seabed_950.r,  s, method="ngb")
+plot(dist_seabed_950.r)
+
+# 1000
+dist_seabed_1000.df <- dist_seabed_3d_1000.df  %>% 
+  dplyr::select (x,y, dist_seabed_1000) %>% 
+  dplyr::filter(dist_seabed_1000>=0)
+dist_seabed_1000.r <- rasterFromXYZ (dist_seabed_1000.df)
+dist_seabed_1000.r <- resample(dist_seabed_1000.r,  s, method="ngb")
+plot(dist_seabed_1000.r)
+
+
+#create 3d raster brick
+dist_seabed_1000 <- brick(dist_seabed_sup.r,
+                          dist_seabed_5.r, 
+                          dist_seabed_10.r,
+                          dist_seabed_15.r,   
+                          dist_seabed_20.r,   
+                          dist_seabed_25.r,   
+                          dist_seabed_30.r,   
+                          dist_seabed_35.r,   
+                          dist_seabed_40.r,   
+                          dist_seabed_45.r,   
+                          dist_seabed_50.r,   
+                          dist_seabed_55.r,   
+                          dist_seabed_60.r,
+                          dist_seabed_65.r,
+                          dist_seabed_70.r,
+                          dist_seabed_75.r,
+                          dist_seabed_80.r,
+                          dist_seabed_85.r,
+                          dist_seabed_90.r,
+                          dist_seabed_95.r,
+                          dist_seabed_100.r,
+                          dist_seabed_125.r,
+                          dist_seabed_150.r,
+                          dist_seabed_175.r,
+                          dist_seabed_200.r,
+                          dist_seabed_225.r,
+                          dist_seabed_250.r,
+                          dist_seabed_275.r,
+                          dist_seabed_300.r,
+                          dist_seabed_325.r,
+                          dist_seabed_350.r,
+                          dist_seabed_375.r,
+                          dist_seabed_400.r,
+                          dist_seabed_425.r,
+                          dist_seabed_450.r,
+                          dist_seabed_475.r,
+                          dist_seabed_500.r,
+                          dist_seabed_550.r,
+                          dist_seabed_600.r,
+                          dist_seabed_650.r,
+                          dist_seabed_700.r,
+                          dist_seabed_750.r,
+                          dist_seabed_800.r,
+                          dist_seabed_850.r,
+                          dist_seabed_900.r,
+                          dist_seabed_950.r,
+                          dist_seabed_1000.r)
+
+plot(dist_seabed_1000)
+
+# save RData
+ 
+save(dist_seabed_sup.r, dist_seabed_1000, file= here::here ("data", "derived_data", "variables",  "DIST_SEABED", "DIST_SEABED.RData"))
+
+#save raster
+ 
+writeRaster(dist_seabed_sup.r, 
+            filename= here::here ("data", "derived_data", "outputs_for_modelling", "variables", "dist_seabed_sup.tif"),
+            format="GTiff",
+            overwrite=TRUE)
+#save brick
+
+writeRaster(dist_seabed_1000, 
+            filename=here::here ("data", "derived_data", "outputs_for_modelling", "variables","dist_seabed_1000.tif"),
+            format="GTiff", 
+            overwrite=TRUE,
+            options=c("INTERLEAVE=BAND","COMPRESS=LZW"))
+
+```
+
+## Code to create position relative to MLD from MLD layer data. 
+#Negative large values will indicate that the species is located far below from mixed layer 
+#large positive values will indicate that the species is located far above from mixed layer
+#small negatives: the species is located close but mixed layer byt below
+#small positives: the species is located close to mixed layer but above 
+
+```{r}
+# transform MLD to df
+mld.df <- as.data.frame(mld.r, xy = TRUE)
+
+summary (mld.df)
+
+mld.df <- mld.df %>% 
+  #change name 
+  rename (mld_relative_position = Objectively.analyzed.mean.fields.for.ocean_mixed_layer_thickness.at.standard.depth.levels.) 
+
+colnames (mld.df ) <- c("x1", "y1", "mld_relative_position")
+
+#transform bathy to df
+
+bathy.df <- as.data.frame(bathy_atl, xy = TRUE)
+
+summary (bathy.df)
+
+bathy.df <- bathy.df %>% 
+  #change name a convert to positive number
+  mutate (m = -layer) %>% 
+  dplyr::select (x, y, m)%>% 
+  dplyr::rename (x2 = "x", 
+                 y2 = "y")
+
+# join depth levels and mld
+
+mld_and_depth <- cbind (mld.df, bathy.df, depth_grid_df)
+
+# check that x and y points are the same in both tables
+mld_and_depth <- mld_and_depth %>% 
+  mutate (diff_x = x-x1) %>% 
+  mutate (diff_y = y-y1)
+
+summary(mld_and_depth)
+
+#drop NA values from mld_relative_position data
+mld_and_depth <- mld_and_depth %>% 
+  drop_na(mld_relative_position)
+
+#plot to see the distribution of the data
+ggplot() +
+  geom_polygon(data = FAO_Atl_dissolved, aes(x = long, y = lat, group = group), colour = "black", fill = NA)+
+    #geom_point(data = mld_and_depth, aes(x = x, y = y, colour= blue), size = 1, colour = "blue") +
+    geom_point(data = mld_and_depth, aes(x = x, y = y, colour= m), size = 1) +
+    coord_sf(xlim=c(-98,68.5), ylim=c(-83,90)) +
+  ggtitle("")+
+  theme(plot.title = element_text(size=12))
+
+# MLD RELATIVE POSITION
+
+#create the variable mld_relative_position by subtracting the meters at which each layer is located to the mixed layer depth value at point xy.
+#**Negative large values will indicate that the species is located far below from mixed layer 
+#large positive values will indicate that the species is located far above from mixed layer
+#small negatives: the species is located close but mixed layer byt below
+#small positives: the species is located close to mixed layer but above 
+
+mld_relative_position.df <- mld_and_depth %>% 
+  #species mld
+  dplyr::mutate (mld_relative_position_0 = mld_relative_position - layer0) %>% 
+  dplyr::mutate (mld_relative_position_5 = mld_relative_position - layer5) %>% 
+  dplyr::mutate (mld_relative_position_10 = mld_relative_position - layer10) %>% 
+  dplyr::mutate (mld_relative_position_15 = mld_relative_position - layer15) %>% 
+  dplyr::mutate (mld_relative_position_20 = mld_relative_position - layer20) %>% 
+  dplyr::mutate (mld_relative_position_25 = mld_relative_position - layer25) %>% 
+  dplyr::mutate (mld_relative_position_30 = mld_relative_position - layer30) %>% 
+  dplyr::mutate (mld_relative_position_35 = mld_relative_position - layer35) %>% 
+  dplyr::mutate (mld_relative_position_40 = mld_relative_position - layer40) %>% 
+  dplyr::mutate (mld_relative_position_45 = mld_relative_position - layer45) %>% 
+  dplyr::mutate (mld_relative_position_50 = mld_relative_position - layer50) %>% 
+  dplyr::mutate (mld_relative_position_55 = mld_relative_position - layer55) %>% 
+  dplyr::mutate (mld_relative_position_60 = mld_relative_position - layer60) %>% 
+  dplyr::mutate (mld_relative_position_65 = mld_relative_position - layer65) %>% 
+  dplyr::mutate (mld_relative_position_70 = mld_relative_position - layer70) %>% 
+  dplyr::mutate (mld_relative_position_75 = mld_relative_position - layer75) %>%
+  dplyr::mutate (mld_relative_position_80 = mld_relative_position - layer80) %>%
+  dplyr::mutate (mld_relative_position_85 = mld_relative_position - layer85) %>%
+  dplyr::mutate (mld_relative_position_90 = mld_relative_position - layer90) %>%
+  dplyr::mutate (mld_relative_position_95 = mld_relative_position - layer95) %>%
+  dplyr::mutate (mld_relative_position_100 = mld_relative_position - layer100) %>%
+  dplyr::mutate (mld_relative_position_125 = mld_relative_position - layer125) %>%
+  dplyr::mutate (mld_relative_position_150 = mld_relative_position - layer150) %>%
+  dplyr::mutate (mld_relative_position_175 = mld_relative_position - layer175) %>%
+  dplyr::mutate (mld_relative_position_200 = mld_relative_position - layer200) %>%
+  dplyr::mutate (mld_relative_position_225 = mld_relative_position - layer225) %>%
+  dplyr::mutate (mld_relative_position_250 = mld_relative_position - layer250) %>%
+  dplyr::mutate (mld_relative_position_275 = mld_relative_position - layer275) %>%
+  dplyr::mutate (mld_relative_position_300 = mld_relative_position - layer300) %>%
+  dplyr::mutate (mld_relative_position_325 = mld_relative_position - layer325) %>%
+  dplyr::mutate (mld_relative_position_350 = mld_relative_position - layer350) %>%
+  dplyr::mutate (mld_relative_position_375 = mld_relative_position - layer375) %>%
+  dplyr::mutate (mld_relative_position_400 = mld_relative_position - layer400) %>%
+  dplyr::mutate (mld_relative_position_425 = mld_relative_position - layer425) %>%
+  dplyr::mutate (mld_relative_position_450 = mld_relative_position - layer450) %>%
+  dplyr::mutate (mld_relative_position_475 = mld_relative_position - layer475) %>%
+  dplyr::mutate (mld_relative_position_500 = mld_relative_position - layer500) %>%
+  dplyr::mutate (mld_relative_position_550 = mld_relative_position - layer550) %>%
+  dplyr::mutate (mld_relative_position_600 = mld_relative_position - layer600) %>%
+  dplyr::mutate (mld_relative_position_650 = mld_relative_position - layer650) %>%
+  dplyr::mutate (mld_relative_position_700 = mld_relative_position - layer700) %>%
+  dplyr::mutate (mld_relative_position_750 = mld_relative_position - layer750) %>%
+  dplyr::mutate (mld_relative_position_800 = mld_relative_position - layer800) %>%
+  dplyr::mutate (mld_relative_position_850 = mld_relative_position - layer850) %>%
+  dplyr::mutate (mld_relative_position_900 = mld_relative_position - layer900) %>%
+  dplyr::mutate (mld_relative_position_950 = mld_relative_position - layer950) %>%
+  dplyr::mutate (mld_relative_position_1000 = mld_relative_position - layer1000) 
+
+
+#transform to raster ------------------------
+
+#define extent 
+e<-extent(-98, 68.5, -83, 90)
+# create a raster with that extent, and the number of rows and colums 
+s<-raster(e, nrows=692, ncols=666, crs=bathy_atl@crs)
+
+#superficial depth layer
+
+#select xy and the values generated subtracting 0 m to bathymetry data
+mld_relative_position_0.df <- mld_relative_position.df  %>% 
+    dplyr::filter (m >= 0) %>% 
+  dplyr::select (x,y, mld_relative_position_0)
+
+#transform to raster
+mld_relative_position_0.r <- rasterFromXYZ (mld_relative_position_0.df)
+plot(mld_relative_position_0.r)
+
+#resample to bathy data to match the resolution and extent of all variables
+
+mld_relative_position_0.r<-resample(mld_relative_position_0.r, s, method="ngb")
+
+#plot to confirm that is mapping the mldance to coast
+plot(mld_relative_position_0.r)
+
+#5m
+
+mld_relative_position_5.df <- mld_relative_position.df  %>% 
+    dplyr::filter (m >= 5) %>% 
+  dplyr::select (x,y, mld_relative_position_5)
+   
+
+mld_relative_position_5.r <- rasterFromXYZ (mld_relative_position_5.df)
+plot(mld_relative_position_5.r)
+
+mld_relative_position_5.r <- resample(mld_relative_position_5.r , s, method="ngb")
+
+plot(mld_relative_position_5.r)
+
+# 10   
+mld_relative_position_10.df <- mld_relative_position.df  %>% 
+    dplyr::filter (m >= 10) %>% 
+  dplyr::select (x,y, mld_relative_position_10)  
+  
+mld_relative_position_10.r <- rasterFromXYZ (mld_relative_position_10.df)
+
+mld_relative_position_10.r <- resample(mld_relative_position_10.r , s, method="ngb")
+plot(mld_relative_position_10.r)
+
+# 15
+mld_relative_position_15.df <- mld_relative_position.df  %>% 
+    dplyr::filter (m >= 15) %>% 
+  dplyr::select (x,y, mld_relative_position_15) 
+  
+mld_relative_position_15.r <- rasterFromXYZ (mld_relative_position_15.df, res=c(0.25,0.25), crs="+proj=longlat +datum=WGS84", digits=5)
+
+#resample
+mld_relative_position_15.r<-resample(mld_relative_position_15.r, s, method="ngb")
+plot(mld_relative_position_15.r)
+
+# 20  
+mld_relative_position_20.df <- mld_relative_position.df  %>% 
+    dplyr::filter (m >= 20) %>% 
+  dplyr::select (x,y, mld_relative_position_20) 
+  
+mld_relative_position_20.r <- rasterFromXYZ (mld_relative_position_20.df, res=c(0.25,0.25), crs="+proj=longlat +datum=WGS84", digits=5)
+mld_relative_position_20.r <-resample(mld_relative_position_20.r,s, method="ngb")
+plot(mld_relative_position_20.r)
+
+# 25
+mld_relative_position_25.df <- mld_relative_position.df  %>% 
+    dplyr::filter (m >= 25) %>% 
+  dplyr::select (x,y, mld_relative_position_25)
+
+mld_relative_position_25.r <- rasterFromXYZ (mld_relative_position_25.df)
+mld_relative_position_25.r <-resample(mld_relative_position_25.r,  s, method="ngb")
+plot(mld_relative_position_25.r)
+
+# 30   
+mld_relative_position_30.df <- mld_relative_position.df  %>% 
+    dplyr::filter (m >= 30) %>% 
+  dplyr::select (x,y, mld_relative_position_30) 
+
+mld_relative_position_30.r <- rasterFromXYZ (mld_relative_position_30.df)
+mld_relative_position_30.r <- resample(mld_relative_position_30.r,  s, method="ngb")
+plot(mld_relative_position_30.r)
+
+# 35 
+mld_relative_position_35.df <- mld_relative_position.df  %>% 
+    dplyr::filter (m >= 35) %>% 
+  dplyr::select (x,y, mld_relative_position_35) 
+
+mld_relative_position_35.r <- rasterFromXYZ (mld_relative_position_35.df)
+mld_relative_position_35.r <- resample(mld_relative_position_35.r,  s, method="ngb")
+plot(mld_relative_position_35.r)
+
+# 40
+mld_relative_position_40.df <- mld_relative_position.df  %>% 
+    dplyr::filter (m >= 40) %>% 
+  dplyr::select (x,y, mld_relative_position_40)
+
+mld_relative_position_40.r <- rasterFromXYZ (mld_relative_position_40.df)
+mld_relative_position_40.r <-resample(mld_relative_position_40.r,  s, method="ngb")
+plot(mld_relative_position_40.r)
+
+# 45
+mld_relative_position_45.df <- mld_relative_position.df  %>% 
+    dplyr::filter (m >= 45) %>% 
+  dplyr::select (x,y, mld_relative_position_45) 
+
+mld_relative_position_45.r <- rasterFromXYZ (mld_relative_position_45.df)
+mld_relative_position_45.r <-resample(mld_relative_position_45.r,  s, method="ngb")
+plot(mld_relative_position_45.r)
+
+# 50
+mld_relative_position_50.df <- mld_relative_position.df  %>% 
+    dplyr::filter (m >= 50) %>% 
+  dplyr::select (x,y, mld_relative_position_50) 
+
+mld_relative_position_50.r <- rasterFromXYZ (mld_relative_position_50.df)
+mld_relative_position_50.r <- resample(mld_relative_position_50.r,  s, method="ngb")
+plot(mld_relative_position_50.r)
+
+# 55
+mld_relative_position_55.df <- mld_relative_position.df  %>% 
+    dplyr::filter (m >= 55) %>% 
+  dplyr::select (x,y, mld_relative_position_55)
+
+mld_relative_position_55.r <- rasterFromXYZ (mld_relative_position_55.df)
+mld_relative_position_55.r <- resample(mld_relative_position_55.r,  s, method="ngb")
+plot(mld_relative_position_55.r)
+
+# 60
+mld_relative_position_60.df <- mld_relative_position.df  %>% 
+    dplyr::filter (m >= 60) %>% 
+  dplyr::select (x,y, mld_relative_position_60)
+
+mld_relative_position_60.r <- rasterFromXYZ (mld_relative_position_60.df)
+mld_relative_position_60.r <-resample(mld_relative_position_60.r,  s, method="ngb")
+plot(mld_relative_position_60.r)
+
+# 65
+mld_relative_position_65.df <- mld_relative_position.df  %>% 
+    dplyr::filter (m >= 65) %>% 
+  dplyr::select (x,y, mld_relative_position_65)
+
+mld_relative_position_65.r <- rasterFromXYZ (mld_relative_position_65.df)
+mld_relative_position_65.r <-resample(mld_relative_position_65.r,  s, method="ngb")
+plot(mld_relative_position_65.r)
+
+# 70
+mld_relative_position_70.df <- mld_relative_position.df  %>% 
+    dplyr::filter (m >= 70) %>% 
+  dplyr::select (x,y, mld_relative_position_70)
+
+mld_relative_position_70.r <- rasterFromXYZ (mld_relative_position_70.df)
+mld_relative_position_70.r <- resample(mld_relative_position_70.r,  s, method="ngb")
+plot(mld_relative_position_70.r)
+
+# 75
+mld_relative_position_75.df <- mld_relative_position.df  %>% 
+    dplyr::filter (m >= 75) %>% 
+  dplyr::select (x,y, mld_relative_position_75)
+
+mld_relative_position_75.r <- rasterFromXYZ (mld_relative_position_75.df)
+mld_relative_position_75.r <- resample(mld_relative_position_75.r,  s, method="ngb")
+plot(mld_relative_position_75.r)
+
+# 80
+mld_relative_position_80.df <- mld_relative_position.df  %>% 
+    dplyr::filter (m >= 80) %>% 
+  dplyr::select (x,y, mld_relative_position_80)
+
+mld_relative_position_80.r <- rasterFromXYZ (mld_relative_position_80.df)
+mld_relative_position_80.r <- resample(mld_relative_position_80.r,  s, method="ngb")
+plot(mld_relative_position_80.r)
+
+# 85
+mld_relative_position_85.df <- mld_relative_position.df  %>% 
+    dplyr::filter (m >= 85) %>% 
+  dplyr::select (x,y, mld_relative_position_85)
+
+mld_relative_position_85.r <- rasterFromXYZ (mld_relative_position_85.df)
+mld_relative_position_85.r <- resample(mld_relative_position_85.r,  s, method="ngb")
+plot(mld_relative_position_85.r)
+
+# 90
+mld_relative_position_90.df <- mld_relative_position.df  %>% 
+    dplyr::filter (m >= 90) %>% 
+  dplyr::select (x,y, mld_relative_position_90)
+
+mld_relative_position_90.r <- rasterFromXYZ (mld_relative_position_90.df)
+mld_relative_position_90.r <- resample(mld_relative_position_90.r,  s, method="ngb")
+plot(mld_relative_position_90.r)
+
+# 95
+mld_relative_position_95.df <- mld_relative_position.df  %>% 
+    dplyr::filter (m >= 95) %>% 
+  dplyr::select (x,y, mld_relative_position_95)
+
+mld_relative_position_95.r <- rasterFromXYZ (mld_relative_position_95.df)
+mld_relative_position_95.r <- resample(mld_relative_position_95.r,  s, method="ngb")
+plot(mld_relative_position_95.r)
+
+# 100 
+mld_relative_position_100.df <- mld_relative_position.df  %>% 
+    dplyr::filter (m >= 100) %>% 
+  dplyr::select (x,y, mld_relative_position_100)
+
+mld_relative_position_100.r <- rasterFromXYZ (mld_relative_position_100.df)
+mld_relative_position_100.r <-resample(mld_relative_position_100.r,  s, method="ngb")
+plot(mld_relative_position_100.r)
+
+# 125
+mld_relative_position_125.df <- mld_relative_position.df  %>% 
+    dplyr::filter (m >= 125) %>% 
+  dplyr::select (x,y, mld_relative_position_125) 
+
+mld_relative_position_125.r <- rasterFromXYZ (mld_relative_position_125.df)
+mld_relative_position_125.r <- resample(mld_relative_position_125.r,  s, method="ngb")
+plot(mld_relative_position_125.r)
+
+# 150
+mld_relative_position_150.df <- mld_relative_position.df  %>% 
+    dplyr::filter (m >= 150) %>% 
+  dplyr::select (x,y, mld_relative_position_150)
+
+mld_relative_position_150.r <- rasterFromXYZ (mld_relative_position_150.df)
+mld_relative_position_150.r <- resample(mld_relative_position_150.r,  s, method="ngb")
+plot(mld_relative_position_150.r)
+
+# 175
+mld_relative_position_175.df <- mld_relative_position.df  %>% 
+    dplyr::filter (m >= 175) %>% 
+  dplyr::select (x,y, mld_relative_position_175)
+
+mld_relative_position_175.r <- rasterFromXYZ (mld_relative_position_175.df)
+mld_relative_position_175.r <- resample(mld_relative_position_175.r,  s, method="ngb")
+plot(mld_relative_position_175.r)
+
+# 200
+mld_relative_position_200.df <- mld_relative_position.df  %>% 
+    dplyr::filter (m >= 200) %>% 
+  dplyr::select (x,y, mld_relative_position_200)
+
+mld_relative_position_200.r <- rasterFromXYZ (mld_relative_position_200.df)
+mld_relative_position_200.r <- resample(mld_relative_position_200.r,  s, method="ngb")
+plot(mld_relative_position_200.r)
+
+# 225
+mld_relative_position_225.df <- mld_relative_position.df  %>% 
+    dplyr::filter (m >= 225) %>% 
+  dplyr::select (x,y, mld_relative_position_225)
+
+mld_relative_position_225.r <- rasterFromXYZ (mld_relative_position_225.df)
+mld_relative_position_225.r <- resample(mld_relative_position_225.r,  s, method="ngb")
+plot(mld_relative_position_225.r)
+
+# 250
+mld_relative_position_250.df <- mld_relative_position.df  %>% 
+    dplyr::filter (m >= 250) %>% 
+  dplyr::select (x,y, mld_relative_position_250)
+
+mld_relative_position_250.r <- rasterFromXYZ (mld_relative_position_250.df)
+mld_relative_position_250.r <-resample(mld_relative_position_250.r,  s, method="ngb")
+plot(mld_relative_position_250.r)
+
+# 275
+mld_relative_position_275.df <- mld_relative_position.df  %>% 
+    dplyr::filter (m >= 275) %>% 
+  dplyr::select (x,y, mld_relative_position_275) 
+
+mld_relative_position_275.r <- rasterFromXYZ (mld_relative_position_275.df)
+mld_relative_position_275.r <- resample(mld_relative_position_275.r,  s, method="ngb")
+plot(mld_relative_position_275.r)
+
+# 300
+mld_relative_position_300.df <- mld_relative_position.df  %>% 
+    dplyr::filter (m >= 300) %>% 
+  dplyr::select (x,y, mld_relative_position_300)
+
+mld_relative_position_300.r <- rasterFromXYZ (mld_relative_position_300.df)
+mld_relative_position_300.r <- resample(mld_relative_position_300.r,  s, method="ngb")
+plot(mld_relative_position_300.r)
+
+# 325  
+mld_relative_position_325.df <- mld_relative_position.df  %>% 
+    dplyr::filter (m >= 325) %>% 
+  dplyr::select (x,y, mld_relative_position_325)
+
+mld_relative_position_325.r <- rasterFromXYZ (mld_relative_position_325.df)
+mld_relative_position_325.r <-resample(mld_relative_position_325.r,  s, method="ngb")
+plot(mld_relative_position_325.r)
+
+# 350
+mld_relative_position_350.df <- mld_relative_position.df  %>% 
+    dplyr::filter (m >= 350) %>% 
+  dplyr::select (x,y, mld_relative_position_350) 
+
+mld_relative_position_350.r <- rasterFromXYZ (mld_relative_position_350.df)
+mld_relative_position_350.r <- resample(mld_relative_position_350.r,  s, method="ngb")
+plot(mld_relative_position_350.r)
+
+# 375  
+mld_relative_position_375.df <- mld_relative_position.df  %>% 
+    dplyr::filter (m >= 375) %>% 
+  dplyr::select (x,y, mld_relative_position_375) 
+
+mld_relative_position_375.r <- rasterFromXYZ (mld_relative_position_375.df)
+mld_relative_position_375.r <-resample(mld_relative_position_375.r,  s, method="ngb")
+plot(mld_relative_position_375.r)
+
+# 400  
+mld_relative_position_400.df <- mld_relative_position.df  %>% 
+    dplyr::filter (m >= 400) %>% 
+  dplyr::select (x,y, mld_relative_position_400)
+
+mld_relative_position_400.r <- rasterFromXYZ (mld_relative_position_400.df)
+mld_relative_position_400.r <- resample(mld_relative_position_400.r,  s, method="ngb")
+plot(mld_relative_position_400.r)
+
+# 425
+mld_relative_position_425.df <- mld_relative_position.df  %>% 
+    dplyr::filter (m >= 425) %>% 
+  dplyr::select (x,y, mld_relative_position_425)
+
+mld_relative_position_425.r <- rasterFromXYZ (mld_relative_position_425.df)
+mld_relative_position_425.r <- resample(mld_relative_position_425.r,  s, method="ngb")
+plot(mld_relative_position_425.r)
+
+# 450  
+mld_relative_position_450.df <- mld_relative_position.df  %>% 
+    dplyr::filter (m >= 450) %>% 
+  dplyr::select (x,y, mld_relative_position_450)
+
+mld_relative_position_450.r <- rasterFromXYZ (mld_relative_position_450.df)
+mld_relative_position_450.r <-resample(mld_relative_position_450.r,  s, method="ngb")
+plot(mld_relative_position_450.r)
+
+# 475
+mld_relative_position_475.df <- mld_relative_position.df  %>% 
+    dplyr::filter (m >= 475) %>% 
+  dplyr::select (x,y, mld_relative_position_475)
+
+mld_relative_position_475.r <- rasterFromXYZ (mld_relative_position_475.df)
+mld_relative_position_475.r <-resample(mld_relative_position_475.r,  s, method="ngb")
+plot(mld_relative_position_475.r)
+
+# 500
+mld_relative_position_500.df <- mld_relative_position.df  %>% 
+    dplyr::filter (m >= 500) %>% 
+  dplyr::select (x,y, mld_relative_position_500)
+
+mld_relative_position_500.r <- rasterFromXYZ (mld_relative_position_500.df)
+mld_relative_position_500.r <- resample(mld_relative_position_500.r,  s, method="ngb")
+plot(mld_relative_position_500.r)
+
+# 550
+mld_relative_position_550.df <- mld_relative_position.df  %>% 
+    dplyr::filter (m >= 550) %>% 
+  dplyr::select (x,y, mld_relative_position_550)
+
+mld_relative_position_550.r <- rasterFromXYZ (mld_relative_position_550.df)
+mld_relative_position_550.r <-resample(mld_relative_position_550.r,  s, method="ngb")
+plot(mld_relative_position_550.r)
+
+# 600
+mld_relative_position_600.df <- mld_relative_position.df  %>% 
+    dplyr::filter (m >= 600) %>% 
+  dplyr::select (x,y, mld_relative_position_600) 
+
+mld_relative_position_600.r <- rasterFromXYZ (mld_relative_position_600.df)
+mld_relative_position_600.r <- resample(mld_relative_position_600.r,  s, method="ngb")
+plot(mld_relative_position_600.r)
+
+# 650
+mld_relative_position_650.df <- mld_relative_position.df  %>% 
+    dplyr::filter (m >= 650) %>% 
+  dplyr::select (x,y, mld_relative_position_650) 
+
+mld_relative_position_650.r <- rasterFromXYZ (mld_relative_position_650.df)
+mld_relative_position_650.r <- resample(mld_relative_position_650.r,  s, method="ngb")
+plot(mld_relative_position_650.r)
+
+# 700
+mld_relative_position_700.df <- mld_relative_position.df  %>% 
+    dplyr::filter (m >= 700) %>% 
+  dplyr::select (x,y, mld_relative_position_700) 
+
+mld_relative_position_700.r <- rasterFromXYZ (mld_relative_position_700.df)
+mld_relative_position_700.r <- resample(mld_relative_position_700.r,  s, method="ngb")
+plot(mld_relative_position_700.r)
+
+# 750
+mld_relative_position_750.df <- mld_relative_position.df  %>% 
+    dplyr::filter (m >= 750) %>% 
+  dplyr::select (x,y, mld_relative_position_750)
+
+mld_relative_position_750.r <- rasterFromXYZ (mld_relative_position_750.df)
+mld_relative_position_750.r <- resample(mld_relative_position_750.r,  s, method="ngb")
+plot(mld_relative_position_750.r)
+
+# 800
+mld_relative_position_800.df <- mld_relative_position.df  %>% 
+    dplyr::filter (m >= 800) %>% 
+  dplyr::select (x,y, mld_relative_position_800)
+
+mld_relative_position_800.r <- rasterFromXYZ (mld_relative_position_800.df)
+mld_relative_position_800.r <-resample(mld_relative_position_800.r,  s, method="ngb")
+plot(mld_relative_position_800.r)
+
+# 850
+mld_relative_position_850.df <- mld_relative_position.df  %>% 
+    dplyr::filter (m >= 850) %>% 
+  dplyr::select (x,y, mld_relative_position_850)
+
+mld_relative_position_850.r <- rasterFromXYZ (mld_relative_position_850.df)
+mld_relative_position_850.r <- resample(mld_relative_position_850.r,  s, method="ngb")
+plot(mld_relative_position_850.r)
+
+# 900 
+mld_relative_position_900.df <- mld_relative_position.df  %>% 
+    dplyr::filter (m >= 900) %>% 
+  dplyr::select (x,y, mld_relative_position_900)
+
+mld_relative_position_900.r <- rasterFromXYZ (mld_relative_position_900.df)
+mld_relative_position_900.r <- resample(mld_relative_position_900.r,  s, method="ngb")
+plot(mld_relative_position_900.r)
+
+# 950
+mld_relative_position_950.df <- mld_relative_position.df  %>% 
+    dplyr::filter (m >= 950) %>% 
+  dplyr::select (x,y, mld_relative_position_950) 
+
+mld_relative_position_950.r <- rasterFromXYZ (mld_relative_position_950.df)
+mld_relative_position_950.r <- resample(mld_relative_position_950.r,  s, method="ngb")
+plot(mld_relative_position_950.r)
+
+# 1000
+
+mld_relative_position_1000.df <- mld_relative_position.df %>% 
+  dplyr::filter (m >= 1000) %>% 
+  dplyr::select (x,y, mld_relative_position_1000)
+  
+
+mld_relative_position_1000.r <- rasterFromXYZ (mld_relative_position_1000.df)
+mld_relative_position_1000.r <- resample(mld_relative_position_1000.r,  s, method="ngb")
+plot(mld_relative_position_1000.r)
+
+#create 3d raster brick
+mld_relative_position_1000 <- brick(mld_relative_position_0.r,
+                          mld_relative_position_5.r, 
+                          mld_relative_position_10.r,
+                          mld_relative_position_15.r,   
+                          mld_relative_position_20.r,   
+                          mld_relative_position_25.r,   
+                          mld_relative_position_30.r,   
+                          mld_relative_position_35.r,   
+                          mld_relative_position_40.r,   
+                          mld_relative_position_45.r,   
+                          mld_relative_position_50.r,   
+                          mld_relative_position_55.r,   
+                          mld_relative_position_60.r,
+                          mld_relative_position_65.r,
+                          mld_relative_position_70.r,
+                          mld_relative_position_75.r,
+                          mld_relative_position_80.r,
+                          mld_relative_position_85.r,
+                          mld_relative_position_90.r,
+                          mld_relative_position_95.r,
+                          mld_relative_position_100.r,
+                          mld_relative_position_125.r,
+                          mld_relative_position_150.r,
+                          mld_relative_position_175.r,
+                          mld_relative_position_200.r,
+                          mld_relative_position_225.r,
+                          mld_relative_position_250.r,
+                          mld_relative_position_275.r,
+                          mld_relative_position_300.r,
+                          mld_relative_position_325.r,
+                          mld_relative_position_350.r,
+                          mld_relative_position_375.r,
+                          mld_relative_position_400.r,
+                          mld_relative_position_425.r,
+                          mld_relative_position_450.r,
+                          mld_relative_position_475.r,
+                          mld_relative_position_500.r,
+                          mld_relative_position_550.r,
+                          mld_relative_position_600.r,
+                          mld_relative_position_650.r,
+                          mld_relative_position_700.r,
+                          mld_relative_position_750.r,
+                          mld_relative_position_800.r,
+                          mld_relative_position_850.r,
+                          mld_relative_position_900.r,
+                          mld_relative_position_950.r,
+                          mld_relative_position_1000.r)
+
+plot(mld_relative_position_1000)
+
+# save RData
+
+save(mld_relative_position_0.r, mld_relative_position_1000, file= here::here ("data", "derived_data", "variables",  "MLD_RELATIVE_POSITION", "mld_relative_position.RData"))
+
+#save raster
+ 
+writeRaster(mld_relative_position_0.r, 
+            filename= here::here ("data", "derived_data", "outputs_for_modelling", "variables", "mld_relative_position_sup.tif"),
+            format="GTiff",
+            overwrite=TRUE)
+#save brick
+
+writeRaster(mld_relative_position_1000, 
+            filename=here::here ("data", "derived_data", "outputs_for_modelling", "variables","mld_relative_position_1000.tif"),
+            format="GTiff", 
+            overwrite=TRUE,
+            options=c("INTERLEAVE=BAND","COMPRESS=LZW"))
+
+```
