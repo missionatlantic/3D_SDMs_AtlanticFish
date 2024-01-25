@@ -1,0 +1,232 @@
+---
+title: "Species catches by cell from Watson 2020"
+author: "Eduardo Ramirez-Romero eta Mireia Valle"
+date: "2023-09-19"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warming = FALSE)
+```
+
+With this script we extract amount of catches by cells from Watson (2020)
+
+### Loading required libraries
+```{r}
+####Version del codigo con library dplyr (mas eficiente)
+library(dplyr)
+library(ggpubr)
+library(ggplot2)
+library(raster)
+library(stringr)
+
+# Libraries for reproducible workflow
+library (here)
+
+# Other libraries
+library(rgeos) #mapping
+library(sp) #mapping
+library(rgdal) #mapping
+library(maptools) #mapping
+library(plyr) #mapping
+library(tidyr)
+library(rfishbase)
+library (readxl)
+```
+
+Load data
+```{r}
+#Atlantic cells
+load(here::here ("data", "derived_data", "01_species_catches", "cell_atl.rds"))
+
+##General key to obtain ID from non industrial cells
+NInd<-read.csv(here::here("data", "raw_data", "Global_Fisheries_Landings_v4", "IndexNInd.csv"))
+
+###General key to obtain ID from industrial cells
+Ind<-read.csv(here::here("data", "raw_data", "Global_Fisheries_Landings_v4", "IndexInd.csv"))
+
+###Cargo la key para las especies
+sp_key<-read_xlsx(here::here("data", "raw_data", "Global_Fisheries_Landings_v4", "Codes.xlsx"), sheet = "Taxa")
+names(sp_key)[1]<-"Taxonkey"
+
+
+#######################################################################
+## 2015 NON industrial 
+#######################################################################
+
+####Load catches 
+Ndata_2015<-read.csv(here::here("data", "raw_data", "Global_Fisheries_Landings_v4", "CatchNInd2015_2015.csv"))
+
+###subset by Atlantic cells
+Ndata_2015<-right_join(Ndata_2015,cell_atl, by="Cell")
+
+###remove NAs
+Ndata_2015 <-na.omit(Ndata_2015)
+head(Ndata_2015)
+
+##Subset by ID
+NInd_2015<-filter(NInd,ID %in% Ndata_2015$ID)
+head(NInd_2015)
+
+###Get number of species captured in our study area
+sps_atl<-data.frame(unique(NInd_2015$Taxonkey))
+colnames(sps_atl) <- c("sp")
+
+### Create new column with sum of catches
+Ndata_2015_sum <- Ndata_2015 %>% 
+  mutate(suma= Reported+ IUU)
+head(Ndata_2015_sum)
+
+### join catches and cells ID
+NInd_2015_joined<- right_join(Ndata_2015_sum, NInd_2015, by="ID")
+head(NInd_2015_joined)
+
+### group by year, cell, species and calculate the sum of sum
+NInd_2015_joined_grouped <- NInd_2015_joined %>% 
+  dplyr::group_by(IYear, Cell, Taxonkey) %>%
+  dplyr::summarise(suma=sum(suma, na.rm=T)) %>% 
+  dplyr::arrange(Taxonkey)
+
+head(NInd_2015_joined_grouped)
+
+###check if the number of species is the same
+unique_spp <-data.frame (unique(NInd_2015_joined_grouped$Taxonkey))
+
+#######################################################################
+## 2015 Industrial 
+#######################################################################
+
+####Load catches
+Idata_2015<-read.csv(here::here("data", "raw_data", "Global_Fisheries_Landings_v4", "CatchInd2015_2015.csv"))
+
+###Subset by Atlantic cells
+Idata_2015<-filter(Idata_2015,Cell %in% cell_atl$Cell)
+
+##Subset by ID
+Ind_2015<-filter(Ind,ID %in% Idata_2015$ID)
+
+###get number of captured species 
+sps_atl<-data.frame(unique(Ind_2015$Taxonkey))
+colnames(sps_atl) <- c("sp")
+
+### Create new column with sum of catches
+Idata_2015_sum <-mutate(Idata_2015,suma=Reported+IUU)
+
+### join catches and cells ID
+Ind_2015_joined<- right_join(Idata_2015_sum, Ind_2015, by="ID")
+head(Ind_2015_joined)
+
+### group by year, cell, species and calculate the sum of sum
+Ind_2015_joined_grouped <- Ind_2015_joined %>% 
+  dplyr::group_by(IYear, Cell, Taxonkey) %>%
+  dplyr::summarise(suma=sum(suma, na.rm=T)) %>% 
+  dplyr::arrange(Taxonkey)
+
+head(Ind_2015_joined_grouped)
+
+###check if the number of species is the same
+unique_spp <-data.frame (unique(Ind_2015_joined_grouped$Taxonkey))
+
+#######################################################################
+## 2010-2014 NON industrial 
+#######################################################################
+
+####Load catches
+Ndata_2010_2014<-read.csv(here::here("data", "raw_data", "Global_Fisheries_Landings_v4", "CatchNInd2010_2014.csv"))
+
+###Subset by Atlantic cells
+Ndata_2010_2014<-filter(Ndata_2010_2014,Cell %in% cell_atl$Cell)
+
+##Subset by ID
+NInd_2010_2014<-filter(NInd,ID %in% Ndata_2010_2014$ID)
+
+###get number of species captured in the study area
+sps_atl<-data.frame(unique(NInd_2010_2014$Taxonkey))
+colnames(sps_atl) <- c("sp")
+
+### Create new column with sum of catches
+Ndata_2010_2014_sum <-mutate(Ndata_2010_2014,suma=Reported+IUU)
+
+### join catches and cells ID
+NInd_2010_2014_joined<- right_join(Ndata_2010_2014_sum, NInd_2010_2014, by="ID")
+head(NInd_2010_2014_joined)
+
+### group by year, cell, species and calculate the sum of sum
+NInd_2010_2014_joined_grouped <- NInd_2010_2014_joined %>% 
+  dplyr::group_by(IYear, Cell, Taxonkey) %>%
+  dplyr::summarise(suma=sum(suma, na.rm=T)) %>% 
+  dplyr::arrange(Taxonkey)
+
+head(NInd_2010_2014_joined_grouped)
+
+###check if the number of species is the same
+unique_spp <-data.frame (unique(NInd_2010_2014_joined_grouped$Taxonkey))
+
+#######################################################################
+## 2010_2014 Industrial 
+#######################################################################
+
+####Load catches
+Idata_2010_2014<-read.csv(here::here("data", "raw_data", "Global_Fisheries_Landings_v4", "CatchInd2010_2014.csv"))
+
+###Subset by Atlantic cells
+Idata_2010_2014<-filter(Idata_2010_2014,Cell %in% cell_atl$Cell)
+head(Idata_2010_2014)
+
+##join catches and cells ID
+Ind_2010_2014<-filter(Ind,ID %in% Idata_2010_2014$ID)
+head(Ind_2010_2014)
+
+###get number of species captured in the study area
+sps_atl<-data.frame(unique(Ind_2010_2014$Taxonkey))
+colnames(sps_atl) <- c("sp")
+
+### Create new column with sum of catches
+Idata_2010_2014_sum <-mutate(Idata_2010_2014,suma=Reported+IUU)
+head(Idata_2010_2014_sum)
+
+### join catches and cells ID
+Ind_2010_2014_joined<- right_join(Idata_2010_2014_sum, Ind_2010_2014, by="ID")
+head(Ind_2010_2014_joined)
+
+### group by year, cell, species and calculate the sum of sum
+Ind_2010_2014_joined_grouped <- Ind_2010_2014_joined %>% 
+  dplyr::group_by(IYear, Cell, Taxonkey) %>%
+  dplyr::summarise(suma=sum(suma, na.rm=T)) %>% 
+  dplyr::arrange(Taxonkey)
+
+head(Ind_2010_2014_joined_grouped)
+
+###check if the number of species is the same
+unique_spp <-data.frame (unique(Ind_2010_2014_joined_grouped$Taxonkey))
+
+######################################################
+# JOIN TABLES to get TOTAL CATCHES BY SPECIES
+######################################################
+
+total_by_cell <- rbind(Ind_2010_2014_joined_grouped, Ind_2015_joined_grouped, NInd_2010_2014_joined_grouped, NInd_2015_joined_grouped) %>% 
+  dplyr::group_by(Cell, Taxonkey) %>%
+  dplyr::summarise(suma_cacthes=sum(suma, na.rm=T)) %>% #sum catches from 2010 to 2015 
+  dplyr::mutate(mean_catches=suma_cacthes/6) #Calculate the mean
+head(total_by_cell)
+
+## Join to add info by species
+total_by_cell_sps<-left_join(total_by_cell, sp_key, by="Taxonkey")
+head(total_by_cell_sps)
+
+## join to add lat and long data
+total_by_cell_sps_lat_long<-right_join(total_by_cell_sps,cell_atl, by="Cell")
+head(total_by_cell_sps_lat_long)
+
+###remove NAs
+total_by_cell_sps_lat_long <-na.omit(total_by_cell_sps_lat_long)
+head(total_by_cell_sps_lat_long)
+
+#Save table with catches by cell 
+
+write.csv(total_by_cell_sps_lat_long,file= here::here("data", "derived_data", "01_species_catches", "total_catches_by_cell_sps_lat_long.csv"))
+
+```
+

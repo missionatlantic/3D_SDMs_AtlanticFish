@@ -1,0 +1,73 @@
+---
+title: "Top captured species"
+author: "Mireia Valle"
+date: "2021-06-1"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warming = FALSE)
+```
+
+Script to get top captured Atlantic fish species based on Watson (2020).
+
+### Loading required libraries
+```{r}
+library(dplyr) #data arrangement
+library(tidyr) #tidy data
+library(readxl)
+library("xlsx")
+
+#Libraries for reproducible workflow
+library (here)
+
+library(rfishbase) #to validate scientificnames
+```
+
+# Load 2010 to 2015 mean catches table for the Atlantic
+```{r}
+list <- read.csv (here::here ("data", "derived_data", "01_species_catches", "total_sp_catches_raw.csv"),  sep = ",")
+head(list)
+
+#Create a new column with validated scientific names using rfishbase
+list <- list %>% 
+  dplyr::select (-X) %>% 
+  dplyr::mutate(validated_names = rfishbase::validate_names(list$TaxonName))
+
+#remove NAs 
+list_validated <- drop_na(list)
+head(list_validated)
+
+
+write.csv(list_validated,file=here::here ("data", "derived_data", "01_species_catches", "spp_list_validated.csv"))
+
+#select top 75 species of the validated list
+top_75_spp <- list_validated %>% 
+  top_n(75, media) 
+
+write.csv(top_75_spp,file=here::here ("data", "derived_data", "01_species_catches", "top_75_spp.csv"))
+
+#select the 5 tuna species that we will model due to their commercial importance
+tunas <- list_validated %>% 
+  dplyr::filter(Taxonkey == 600107 |Taxonkey == 600142 | Taxonkey == 600143| Taxonkey == 600146| Taxonkey == 600147) 
+head(tunas)
+
+write.csv(tunas,file=here::here ("data", "derived_data", "01_species_catches", "tunas.csv"))
+
+#join both table to get the species list that we are going to use to get the species distribution data
+#we use unique to add only those tunas that are not in the top 75 list
+fish_and_tuna_list <- unique(rbind(top_75_spp, tunas)) %>% 
+  arrange(desc(media))
+
+write.xlsx(fish_and_tuna_list, file=here::here ("data", "derived_data", "01_species_catches", "fish_and_tuna_long_list_75.xlsx"),append=TRUE, col.names=TRUE)
+
+#we are going to open and edit this last excel file: 
+# adding SP column 
+# renaming scomber japonicus to scomber colias
+# renaming sheet 1 as lista_plot
+
+```
+

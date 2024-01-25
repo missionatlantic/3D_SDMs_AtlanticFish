@@ -1,0 +1,68 @@
+---
+title: "Extract FAO cells"
+author: "Eduardo Ramirez-Romero & Mireia Valle"
+date: "2021-01-01"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warming = FALSE)
+```
+
+With this script we extract the cells from Watson (2020) dataset that are within our area of interest. Resolution of the cells is 30x30'
+
+### Loading required libraries
+```{r}
+library(rgeos)
+library(sp)
+library(rgdal)
+library(data.table)
+library(readxl)
+library(ggplot2)
+
+# Libraries for reproducible workflow
+library (here)
+```
+
+In order to be able to follow the code you need to download a file from Watson, Reginald (2020): Global Fisheries Landings V4.0. .dataset. 10.25959/5c522cadbea37
+
+Go to: https://metadata.imas.utas.edu.au/geonetwork/srv/eng/catalog.search#/metadata/5c4590d3-a45a-4d37-bf8b-ecd145cb356d
+
+And download the following file and save it in raw_data folder> Global_Fisheries_Landings_v4: 
+
+https://data.imas.utas.edu.au/attachments/5c4590d3-a45a-4d37-bf8b-ecd145cb356d/Codes.xlsx
+
+```{r}
+##Read Watson dataset 
+cell<-read_xlsx(here::here("data", "raw_data", "Global_Fisheries_Landings_v4", "Codes.xlsx"), sheet = "Cell")
+
+
+#Load FAO Atlantic
+
+FAO_Atl <- readOGR(here::here("data", "raw_data", "FAO_AREAS", "FAO_Atl.shp"))
+
+plot(FAO_Atl)
+
+dat <- (cbind(cell$LonCentre,cell$LatCentre))
+ptos<-as.data.table(dat,keep.columnnames=TRUE)
+coordinates(ptos) <- ~ V1 + V2
+proj4string(ptos) <-proj4string(FAO_Atl)
+
+
+match2<-data.frame(subset(cell , !is.na(over(ptos, FAO_Atl)[,1])))
+
+####Extract FAO area information
+match3<-data.frame(subset(over(ptos, FAO_Atl), !is.na(over(ptos, FAO_Atl)[,1])))
+cell_atl<-cbind(match3$F_AREA,match2)
+names(cell_atl)[names(cell_atl) == "match3$F_AREA"] <- "F_AREA"
+
+#plot
+map <- ggplot() +  geom_point(data=cell_atl, aes(x=LonCentre, y=LatCentre), color="black")
+plot(map)
+
+###Save Atlantic cells.
+save(cell_atl,file=here::here ("data", "derived_data", "01_species_catches", "cell_atl.rds"))
+```
+
