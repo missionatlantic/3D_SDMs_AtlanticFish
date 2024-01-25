@@ -1,0 +1,99 @@
+---
+title: "01_variable_correlation_vif"
+author: "Mireia Valle"
+date: "27/10/2021"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warming = FALSE)
+```
+
+### Script information
+
+With this script we assess the correlation between environmental variables based on Variance Inflation Factor (VIF) by depth set from 0 to 1000 meters depth 
+
+Project: IM-20-MISSION
+
+### Loading required libraries
+
+```{r}
+library(rgdal) # to read shp
+library(raster) # to work with rasters
+library (here) # Libraries for reproducible workflow
+library (sp)     # to perform raster
+library(HH) #to calculate for VIF (Variance Inflation Factor)
+library(ggplot2)# plots
+library(gridExtra)# multiple plots
+library(dplyr)
+library(RColorBrewer)#plotting colors
+library(fields)#ploting images
+library(marmap)#ploting world
+library(maptools)#mapping
+library(tidyverse)
+library(corrplot)
+```
+
+### Loading depths sets of environmental variables
+
+```{r}
+#3D
+
+set_0_m <- brick(here::here("data", "derived_data","outputs_for_modelling","depth_sets","set_0_m.tif"))
+set_5_m <- brick(here::here("data", "derived_data","outputs_for_modelling","depth_sets","set_5_m.tif"))
+set_10_m <- brick(here::here("data", "derived_data","outputs_for_modelling","depth_sets","set_10_m.tif"))
+set_15_m <- brick(here::here("data", "derived_data","outputs_for_modelling","depth_sets","set_15_m.tif"))
+```
+
+#### Correlation test, plot and VIF BY DEPTH SET
+
+# 0 meters
+
+```{r}
+#### Transforming from stack to table
+
+v_table_0_m <- as.data.frame(set_0_m)
+
+##### See a summary of the table
+
+summary(v_table_0_m)
+
+#names
+
+names (v_table_0_m) <- c("Sea Temp", 
+                         "Sal",
+                         "Nit",
+                         "DO", 
+                         "Rel seabed", 
+                         "Rel MLD", 
+                         "Log (npp+1)")
+
+#correlation test and plot 
+
+v_table_0_m_noNA <- na.omit(v_table_0_m)
+
+testRes <- cor.mtest(v_table_0_m_noNA, conf.level = 0.95)
+
+M <- cor (v_table_0_m_noNA)
+
+corrplot(M, p.mat = testRes$p, method = 'circle', type = 'lower', insig='blank',
+         addCoef.col ='black', number.cex = 0.8, order = 'AOE', diag=FALSE)
+
+##### get vif results
+
+resultado.vif <- vif(v_table_0_m)
+resultado.vif
+
+#remove "do" because is higly correlated to temperature
+
+v_table_0_m <- v_table_0_m %>% 
+  dplyr::select (-DO)
+
+##### get new vif results
+
+resultado.vif <- vif(v_table_0_m)
+resultado.vif
+```
+
