@@ -1,0 +1,1295 @@
+---
+title: "01_variables_depth_sets"
+author: "Mireia Valle"
+date: "7/2/2022"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warming = FALSE)
+```
+
+Loading required libraries
+
+### Loading required libraries
+
+```{r}
+library(raster)
+library (here) # Libraries for reproducible workflow
+library(tidyverse)
+```
+
+Loading 3D variables
+```{r}
+#1. temperature 
+temp <- brick(here::here("data", "derived_data", "outputs_for_modelling","variables","temp_3d_1000.tif"))
+
+#2. salinity
+sal <- brick(here::here("data", "derived_data", "outputs_for_modelling","variables","sal_3d_1000.tif"))
+
+#3. nitrate
+nit <- brick(here::here("data", "derived_data", "outputs_for_modelling","variables","nit_3d_1000.tif"))
+  
+#4. do
+do <- brick(here::here("data", "derived_data", "outputs_for_modelling","variables","o2_3d_1000.tif"))
+
+#6. mld relative position
+mld_relative_position<- brick(here::here("data", "derived_data", "outputs_for_modelling","variables","mld_relative_position_1000.tif"))
+
+#7. npp we had interpolated npp in log + 1 log (npp + 1)
+npp <- brick(here::here("data", "derived_data", "outputs_for_modelling","variables","npp.inter_log.tif"))
+
+#8. distance to seabed
+dist_seabed <- brick(here::here("data", "derived_data", "outputs_for_modelling","variables","dist_seabed_1000.tif"))
+```
+
+## check variables
+```{r}
+str(temp)
+names(temp)
+
+str(sal)
+names(sal)
+
+str(nit)
+names(do)
+
+names(mld_relative_position)
+
+names (dist_seabed)
+
+str(npp)
+names(npp)
+```
+
+## creating variables sets by depth
+```{r}
+# 1. 0   
+temp_0 <- subset(temp, 1) 
+sal_0 <- subset (sal, 1)
+nit_0 <- subset (nit, 1)
+do_0 <- subset (do, 1)
+dist_seabed_0 <- subset (dist_seabed, 1)
+mld_rel_0 <- subset (mld_relative_position, 1)
+npp_0 <-   subset (npp, 1)
+
+
+set_0_m <- brick (temp_0, 
+                sal_0,
+                nit_0, 
+                do_0,
+                dist_seabed_0, 
+                mld_rel_0,
+                npp_0)
+plot(set_0_m)
+
+#save brick
+
+writeRaster(set_0_m, 
+            filename=here::here ("data", "derived_data", "outputs_for_modelling", "depth_sets","set_0_m.tif"),
+            format="GTiff", 
+            overwrite=TRUE,
+            options=c("INTERLEAVE=BAND","COMPRESS=LZW"))
+
+# 2. 5
+temp_5 <- subset(temp, 2) 
+sal_5 <- subset (sal, 2)
+nit_5 <- subset (nit, 2)
+do_5 <- subset (do, 2)
+dist_seabed_5 <- subset (dist_seabed, 2)
+mld_rel_5 <- subset (mld_relative_position, 2)
+npp_5 <-   subset (npp, 2)
+
+
+set_5_m <- brick (temp_5, 
+                sal_5,
+                nit_5, 
+                do_5,
+                dist_seabed_5, 
+                mld_rel_5,
+                npp_5)
+plot(set_5_m)
+
+#save brick
+
+writeRaster(set_5_m, 
+            filename=here::here ("data", "derived_data", "outputs_for_modelling", "depth_sets","set_5_m.tif"),
+            format="GTiff", 
+            overwrite=TRUE,
+            options=c("INTERLEAVE=BAND","COMPRESS=LZW"))
+
+# 3. 10
+temp_10 <- subset(temp, 3) 
+sal_10 <- subset (sal, 3)
+nit_10 <- subset (nit, 3)
+do_10 <- subset (do, 3)
+dist_seabed_10 <- subset (dist_seabed, 3)
+mld_rel_10 <- subset (mld_relative_position, 3)
+npp_10 <-   subset (npp, 3)
+
+
+set_10_m <- brick (temp_10, 
+                sal_10,
+                nit_10, 
+                do_10,
+                dist_seabed_10, 
+                mld_rel_10,
+                npp_10)
+plot(set_10_m)
+
+#save brick
+
+writeRaster(set_10_m, 
+            filename=here::here ("data", "derived_data", "outputs_for_modelling", "depth_sets","set_10_m.tif"),
+            format="GTiff", 
+            overwrite=TRUE,
+            options=c("INTERLEAVE=BAND","COMPRESS=LZW"))
+# 4. 15
+temp_15 <- subset(temp, 4) 
+sal_15 <- subset (sal, 4)
+nit_15 <- subset (nit, 4)
+do_15 <- subset (do, 4)
+dist_seabed_15 <- subset (dist_seabed, 4)
+mld_rel_15 <- subset (mld_relative_position, 4)
+npp_15 <-   subset (npp, 4)
+
+
+set_15_m <- brick (temp_15, 
+                sal_15,
+                nit_15, 
+                do_15,
+                dist_seabed_15, 
+                mld_rel_15,
+                npp_15)
+plot(set_15_m)
+
+#save brick
+
+writeRaster(set_15_m, 
+            filename=here::here ("data", "derived_data", "outputs_for_modelling", "depth_sets","set_15_m.tif"),
+            format="GTiff", 
+            overwrite=TRUE,
+            options=c("INTERLEAVE=BAND","COMPRESS=LZW"))
+# 5. 20
+temp_20 <- subset(temp, 5) 
+sal_20 <- subset (sal, 5)
+nit_20 <- subset (nit, 5)
+do_20 <- subset (do, 5)
+dist_seabed_20 <- subset (dist_seabed, 5)
+mld_rel_20 <- subset (mld_relative_position, 5)
+npp_20 <-   subset (npp, 5)
+
+
+set_20_m <- brick (temp_20, 
+                sal_20,
+                nit_20, 
+                do_20,
+                dist_seabed_20, 
+                mld_rel_20,
+                npp_20)
+plot(set_20_m)
+
+#save brick
+
+writeRaster(set_20_m, 
+            filename=here::here ("data", "derived_data", "outputs_for_modelling", "depth_sets","set_20_m.tif"),
+            format="GTiff", 
+            overwrite=TRUE,
+            options=c("INTERLEAVE=BAND","COMPRESS=LZW"))
+# 6. 25
+temp_25 <- subset(temp, 6) 
+sal_25 <- subset (sal, 6)
+nit_25 <- subset (nit, 6)
+do_25 <- subset (do, 6)
+dist_seabed_25 <- subset (dist_seabed, 6)
+mld_rel_25 <- subset (mld_relative_position, 6)
+npp_25 <-   subset (npp, 6)
+
+
+set_25_m <- brick (temp_25, 
+                sal_25,
+                nit_25, 
+                do_25,
+                dist_seabed_25, 
+                mld_rel_25,
+                npp_25)
+plot(set_25_m)
+
+#save brick
+
+writeRaster(set_25_m, 
+            filename=here::here ("data", "derived_data", "outputs_for_modelling", "depth_sets","set_25_m.tif"),
+            format="GTiff", 
+            overwrite=TRUE,
+            options=c("INTERLEAVE=BAND","COMPRESS=LZW"))
+# 7. 30
+temp_30 <- subset(temp, 7) 
+sal_30 <- subset (sal, 7)
+nit_30 <- subset (nit, 7)
+do_30 <- subset (do, 7)
+dist_seabed_30 <- subset (dist_seabed, 7)
+mld_rel_30 <- subset (mld_relative_position, 7)
+npp_30 <-   subset (npp, 7)
+
+
+set_30_m <- brick (temp_30, 
+                sal_30,
+                nit_30, 
+                do_30,
+                dist_seabed_30, 
+                mld_rel_30,
+                npp_30)
+plot(set_30_m)
+
+#save brick
+
+writeRaster(set_30_m, 
+            filename=here::here ("data", "derived_data", "outputs_for_modelling", "depth_sets","set_30_m.tif"),
+            format="GTiff", 
+            overwrite=TRUE,
+            options=c("INTERLEAVE=BAND","COMPRESS=LZW"))
+# 8. 35
+temp_35 <- subset(temp, 8) 
+sal_35 <- subset (sal, 8)
+nit_35 <- subset (nit, 8)
+do_35 <- subset (do, 8)
+dist_seabed_35 <- subset (dist_seabed, 8)
+mld_rel_35 <- subset (mld_relative_position, 8)
+npp_35 <-   subset (npp, 8)
+
+
+set_35_m <- brick (temp_35, 
+                sal_35,
+                nit_35, 
+                do_35,
+                dist_seabed_35, 
+                mld_rel_35,
+                npp_35)
+plot(set_35_m)
+
+#save brick
+
+writeRaster(set_35_m, 
+            filename=here::here ("data", "derived_data", "outputs_for_modelling", "depth_sets","set_35_m.tif"),
+            format="GTiff", 
+            overwrite=TRUE,
+            options=c("INTERLEAVE=BAND","COMPRESS=LZW"))
+# 9. 40
+temp_40 <- subset(temp, 9) 
+sal_40 <- subset (sal, 9)
+nit_40 <- subset (nit, 9)
+do_40 <- subset (do, 9)
+dist_seabed_40 <- subset (dist_seabed, 9)
+mld_rel_40 <- subset (mld_relative_position, 9)
+npp_40 <-   subset (npp, 9)
+
+
+set_40_m <- brick (temp_40, 
+                sal_40,
+                nit_40, 
+                do_40,
+                dist_seabed_40, 
+                mld_rel_40,
+                npp_40)
+plot(set_40_m)
+
+#save brick
+
+writeRaster(set_40_m, 
+            filename=here::here ("data", "derived_data", "outputs_for_modelling", "depth_sets","set_40_m.tif"),
+            format="GTiff", 
+            overwrite=TRUE,
+            options=c("INTERLEAVE=BAND","COMPRESS=LZW"))
+# 10. 45
+temp_45 <- subset(temp, 10) 
+sal_45 <- subset (sal, 10)
+nit_45 <- subset (nit, 10)
+do_45 <- subset (do, 10)
+dist_seabed_45 <- subset (dist_seabed, 10)
+mld_rel_45 <- subset (mld_relative_position, 10)
+npp_45 <-   subset (npp, 10)
+
+
+set_45_m <- brick (temp_45, 
+                sal_45,
+                nit_45, 
+                do_45,
+                dist_seabed_45, 
+                mld_rel_45,
+                npp_45)
+plot(set_45_m)
+
+#save brick
+
+writeRaster(set_45_m, 
+            filename=here::here ("data", "derived_data", "outputs_for_modelling", "depth_sets","set_45_m.tif"),
+            format="GTiff", 
+            overwrite=TRUE,
+            options=c("INTERLEAVE=BAND","COMPRESS=LZW"))
+# 11. 50
+temp_50 <- subset(temp, 11) 
+sal_50 <- subset (sal, 11)
+nit_50 <- subset (nit, 11)
+do_50 <- subset (do, 11)
+dist_seabed_50 <- subset (dist_seabed, 11)
+mld_rel_50 <- subset (mld_relative_position, 11)
+npp_50 <-   subset (npp, 11)
+
+
+set_50_m <- brick (temp_50, 
+                sal_50,
+                nit_50, 
+                do_50,
+                dist_seabed_50, 
+                mld_rel_50,
+                npp_50)
+plot(set_50_m)
+
+#save brick
+
+writeRaster(set_50_m, 
+            filename=here::here ("data", "derived_data", "outputs_for_modelling", "depth_sets","set_50_m.tif"),
+            format="GTiff", 
+            overwrite=TRUE,
+            options=c("INTERLEAVE=BAND","COMPRESS=LZW"))
+# 12. 55
+temp_55 <- subset(temp, 12) 
+sal_55 <- subset (sal, 12)
+nit_55 <- subset (nit, 12)
+do_55 <- subset (do, 12)
+dist_seabed_55 <- subset (dist_seabed, 12)
+mld_rel_55 <- subset (mld_relative_position, 12)
+npp_55 <-   subset (npp, 12)
+
+
+set_55_m <- brick (temp_55, 
+                sal_55,
+                nit_55, 
+                do_55,
+                dist_seabed_55, 
+                mld_rel_55,
+                npp_55)
+plot(set_55_m)
+
+#save brick
+
+writeRaster(set_55_m, 
+            filename=here::here ("data", "derived_data", "outputs_for_modelling", "depth_sets","set_55_m.tif"),
+            format="GTiff", 
+            overwrite=TRUE,
+            options=c("INTERLEAVE=BAND","COMPRESS=LZW"))
+# 13. 60
+temp_60 <- subset(temp, 13) 
+sal_60 <- subset (sal, 13)
+nit_60 <- subset (nit, 13)
+do_60 <- subset (do, 13)
+dist_seabed_60 <- subset (dist_seabed, 13)
+mld_rel_60 <- subset (mld_relative_position, 13)
+npp_60 <-   subset (npp, 13)
+
+
+set_60_m <- brick (temp_60, 
+                sal_60,
+                nit_60, 
+                do_60,
+                dist_seabed_60, 
+                mld_rel_60,
+                npp_60)
+plot(set_60_m)
+
+#save brick
+
+writeRaster(set_60_m, 
+            filename=here::here ("data", "derived_data", "outputs_for_modelling", "depth_sets","set_60_m.tif"),
+            format="GTiff", 
+            overwrite=TRUE,
+            options=c("INTERLEAVE=BAND","COMPRESS=LZW"))
+# 14. 65
+temp_65 <- subset(temp, 14) 
+sal_65 <- subset (sal, 14)
+nit_65 <- subset (nit, 14)
+do_65 <- subset (do, 14)
+dist_seabed_65 <- subset (dist_seabed, 14)
+mld_rel_65 <- subset (mld_relative_position, 14)
+npp_65 <-   subset (npp, 14)
+
+
+set_65_m <- brick (temp_65, 
+                sal_65,
+                nit_65, 
+                do_65,
+                dist_seabed_65, 
+                mld_rel_65,
+                npp_65)
+plot(set_65_m)
+
+#save brick
+
+writeRaster(set_65_m, 
+            filename=here::here ("data", "derived_data", "outputs_for_modelling", "depth_sets","set_65_m.tif"),
+            format="GTiff", 
+            overwrite=TRUE,
+            options=c("INTERLEAVE=BAND","COMPRESS=LZW"))
+# 15. 70
+temp_70 <- subset(temp, 15) 
+sal_70 <- subset (sal, 15)
+nit_70 <- subset (nit, 15)
+do_70 <- subset (do, 15)
+dist_seabed_70 <- subset (dist_seabed, 15)
+mld_rel_70 <- subset (mld_relative_position, 15)
+npp_70 <-   subset (npp, 15)
+
+
+set_70_m <- brick (temp_70, 
+                sal_70,
+                nit_70, 
+                do_70,
+                dist_seabed_70, 
+                mld_rel_70,
+                npp_70)
+plot(set_70_m)
+
+#save brick
+
+writeRaster(set_70_m, 
+            filename=here::here ("data", "derived_data", "outputs_for_modelling", "depth_sets","set_70_m.tif"),
+            format="GTiff", 
+            overwrite=TRUE,
+            options=c("INTERLEAVE=BAND","COMPRESS=LZW"))
+# 16. 75
+temp_75 <- subset(temp, 16) 
+sal_75 <- subset (sal, 16)
+nit_75 <- subset (nit, 16)
+do_75 <- subset (do, 16)
+dist_seabed_75 <- subset (dist_seabed, 16)
+mld_rel_75 <- subset (mld_relative_position, 16)
+npp_75 <-   subset (npp, 16)
+
+
+set_75_m <- brick (temp_75, 
+                sal_75,
+                nit_75, 
+                do_75,
+                dist_seabed_75, 
+                mld_rel_75,
+                npp_75)
+plot(set_75_m)
+
+#save brick
+
+writeRaster(set_75_m, 
+            filename=here::here ("data", "derived_data", "outputs_for_modelling", "depth_sets","set_75_m.tif"),
+            format="GTiff", 
+            overwrite=TRUE,
+            options=c("INTERLEAVE=BAND","COMPRESS=LZW"))
+# 17. 80
+temp_80 <- subset(temp, 17) 
+sal_80 <- subset (sal, 17)
+nit_80 <- subset (nit, 17)
+do_80 <- subset (do, 17)
+dist_seabed_80 <- subset (dist_seabed, 17)
+mld_rel_80 <- subset (mld_relative_position, 17)
+npp_80 <-   subset (npp, 17)
+
+
+set_80_m <- brick (temp_80, 
+                sal_80,
+                nit_80, 
+                do_80,
+                dist_seabed_80, 
+                mld_rel_80,
+                npp_80)
+plot(set_80_m)
+
+#save brick
+
+writeRaster(set_80_m, 
+            filename=here::here ("data", "derived_data", "outputs_for_modelling", "depth_sets","set_80_m.tif"),
+            format="GTiff", 
+            overwrite=TRUE,
+            options=c("INTERLEAVE=BAND","COMPRESS=LZW"))
+# 18. 85
+temp_85 <- subset(temp, 18) 
+sal_85 <- subset (sal, 18)
+nit_85 <- subset (nit, 18)
+do_85 <- subset (do, 18)
+dist_seabed_85 <- subset (dist_seabed, 18)
+mld_rel_85 <- subset (mld_relative_position, 18)
+npp_85 <-   subset (npp, 18)
+
+
+set_85_m <- brick (temp_85, 
+                sal_85,
+                nit_85, 
+                do_85,
+                dist_seabed_85, 
+                mld_rel_85,
+                npp_85)
+plot(set_85_m)
+
+#save brick
+
+writeRaster(set_85_m, 
+            filename=here::here ("data", "derived_data", "outputs_for_modelling", "depth_sets","set_85_m.tif"),
+            format="GTiff", 
+            overwrite=TRUE,
+            options=c("INTERLEAVE=BAND","COMPRESS=LZW"))
+# 19. 90
+temp_90 <- subset(temp, 19) 
+sal_90 <- subset (sal, 19)
+nit_90 <- subset (nit, 19)
+do_90 <- subset (do, 19)
+dist_seabed_90 <- subset (dist_seabed, 19)
+mld_rel_90 <- subset (mld_relative_position, 19)
+npp_90 <-   subset (npp, 19)
+
+
+set_90_m <- brick (temp_90, 
+                sal_90,
+                nit_90, 
+                do_90,
+                dist_seabed_90, 
+                mld_rel_90,
+                npp_90)
+plot(set_90_m)
+
+#save brick
+
+writeRaster(set_90_m, 
+            filename=here::here ("data", "derived_data", "outputs_for_modelling", "depth_sets","set_90_m.tif"),
+            format="GTiff", 
+            overwrite=TRUE,
+            options=c("INTERLEAVE=BAND","COMPRESS=LZW"))
+# 20. 95
+temp_95 <- subset(temp, 20) 
+sal_95 <- subset (sal, 20)
+nit_95 <- subset (nit, 20)
+do_95 <- subset (do, 20)
+dist_seabed_95 <- subset (dist_seabed, 20)
+mld_rel_95 <- subset (mld_relative_position, 20)
+npp_95 <-   subset (npp, 20)
+
+
+set_95_m <- brick (temp_95, 
+                sal_95,
+                nit_95, 
+                do_95,
+                dist_seabed_95, 
+                mld_rel_95,
+                npp_95)
+plot(set_95_m)
+
+#save brick
+
+writeRaster(set_95_m, 
+            filename=here::here ("data", "derived_data", "outputs_for_modelling", "depth_sets","set_95_m.tif"),
+            format="GTiff", 
+            overwrite=TRUE,
+            options=c("INTERLEAVE=BAND","COMPRESS=LZW"))
+# 21. 100
+temp_100 <- subset(temp, 21) 
+sal_100 <- subset (sal, 21)
+nit_100 <- subset (nit, 21)
+do_100 <- subset (do, 21)
+dist_seabed_100 <- subset (dist_seabed, 21)
+mld_rel_100 <- subset (mld_relative_position, 21)
+npp_100 <-   subset (npp, 21)
+
+
+set_100_m <- brick (temp_100, 
+                sal_100,
+                nit_100, 
+                do_100,
+                dist_seabed_100, 
+                mld_rel_100,
+                npp_100)
+plot(set_100_m)
+
+#save brick
+
+writeRaster(set_100_m, 
+            filename=here::here ("data", "derived_data", "outputs_for_modelling", "depth_sets","set_100_m.tif"),
+            format="GTiff", 
+            overwrite=TRUE,
+            options=c("INTERLEAVE=BAND","COMPRESS=LZW"))
+# 22. 125
+temp_125 <- subset(temp, 22) 
+sal_125 <- subset (sal, 22)
+nit_125 <- subset (nit, 22)
+do_125 <- subset (do, 22)
+dist_seabed_125 <- subset (dist_seabed, 22)
+mld_rel_125 <- subset (mld_relative_position, 22)
+npp_125 <-   subset (npp, 22)
+
+
+set_125_m <- brick (temp_125, 
+                sal_125,
+                nit_125, 
+                do_125,
+                dist_seabed_125, 
+                mld_rel_125,
+                npp_125)
+plot(set_125_m)
+
+#save brick
+
+writeRaster(set_125_m, 
+            filename=here::here ("data", "derived_data", "outputs_for_modelling", "depth_sets","set_125_m.tif"),
+            format="GTiff", 
+            overwrite=TRUE,
+            options=c("INTERLEAVE=BAND","COMPRESS=LZW"))
+# 23. 150
+temp_150 <- subset(temp, 23) 
+sal_150 <- subset (sal, 23)
+nit_150 <- subset (nit, 23)
+do_150 <- subset (do, 23)
+dist_seabed_150 <- subset (dist_seabed, 23)
+mld_rel_150 <- subset (mld_relative_position, 23)
+npp_150 <-   subset (npp, 23)
+
+
+set_150_m <- brick (temp_150, 
+                sal_150,
+                nit_150, 
+                do_150,
+                dist_seabed_150, 
+                mld_rel_150,
+                npp_150)
+plot(set_150_m)
+
+#save brick
+
+writeRaster(set_150_m, 
+            filename=here::here ("data", "derived_data", "outputs_for_modelling", "depth_sets","set_150_m.tif"),
+            format="GTiff", 
+            overwrite=TRUE,
+            options=c("INTERLEAVE=BAND","COMPRESS=LZW"))
+# 24. 175
+temp_175 <- subset(temp, 24) 
+sal_175 <- subset (sal, 24)
+nit_175 <- subset (nit, 24)
+do_175 <- subset (do, 24)
+dist_seabed_175 <- subset (dist_seabed, 24)
+mld_rel_175 <- subset (mld_relative_position, 24)
+npp_175 <-   subset (npp, 24)
+
+
+set_175_m <- brick (temp_175, 
+                sal_175,
+                nit_175, 
+                do_175,
+                dist_seabed_175, 
+                mld_rel_175,
+                npp_175)
+plot(set_175_m)
+
+#save brick
+
+writeRaster(set_175_m, 
+            filename=here::here ("data", "derived_data", "outputs_for_modelling", "depth_sets","set_175_m.tif"),
+            format="GTiff", 
+            overwrite=TRUE,
+            options=c("INTERLEAVE=BAND","COMPRESS=LZW"))
+# 25. 200
+temp_200 <- subset(temp, 25) 
+sal_200 <- subset (sal, 25)
+nit_200 <- subset (nit, 25)
+do_200 <- subset (do, 25)
+dist_seabed_200 <- subset (dist_seabed, 25)
+mld_rel_200 <- subset (mld_relative_position, 25)
+npp_200 <-   subset (npp, 25)
+
+
+set_200_m <- brick (temp_200, 
+                sal_200,
+                nit_200, 
+                do_200,
+                dist_seabed_200, 
+                mld_rel_200,
+                npp_200)
+plot(set_200_m)
+
+#save brick
+
+writeRaster(set_200_m, 
+            filename=here::here ("data", "derived_data", "outputs_for_modelling", "depth_sets","set_200_m.tif"),
+            format="GTiff", 
+            overwrite=TRUE,
+            options=c("INTERLEAVE=BAND","COMPRESS=LZW"))
+# 26. 225
+temp_225 <- subset(temp, 26) 
+sal_225 <- subset (sal, 26)
+nit_225 <- subset (nit, 26)
+do_225 <- subset (do, 26)
+dist_seabed_225 <- subset (dist_seabed, 26)
+mld_rel_225 <- subset (mld_relative_position, 26)
+npp_225 <-   subset (npp, 26)
+
+
+set_225_m <- brick (temp_225, 
+                sal_225,
+                nit_225, 
+                do_225,
+                dist_seabed_225, 
+                mld_rel_225,
+                npp_225)
+plot(set_225_m)
+
+#save brick
+
+writeRaster(set_225_m, 
+            filename=here::here ("data", "derived_data", "outputs_for_modelling", "depth_sets","set_225_m.tif"),
+            format="GTiff", 
+            overwrite=TRUE,
+            options=c("INTERLEAVE=BAND","COMPRESS=LZW"))
+# 27. 250
+temp_250 <- subset(temp, 27) 
+sal_250 <- subset (sal, 27)
+nit_250 <- subset (nit, 27)
+do_250 <- subset (do, 27)
+dist_seabed_250 <- subset (dist_seabed, 27)
+mld_rel_250 <- subset (mld_relative_position, 27)
+npp_250 <-   subset (npp, 27)
+
+
+set_250_m <- brick (temp_250, 
+                sal_250,
+                nit_250, 
+                do_250,
+                dist_seabed_250, 
+                mld_rel_250,
+                npp_250)
+plot(set_250_m)
+
+#save brick
+
+writeRaster(set_250_m, 
+            filename=here::here ("data", "derived_data", "outputs_for_modelling", "depth_sets","set_250_m.tif"),
+            format="GTiff", 
+            overwrite=TRUE,
+            options=c("INTERLEAVE=BAND","COMPRESS=LZW"))
+# 28. 275
+temp_275 <- subset(temp, 28) 
+sal_275 <- subset (sal, 28)
+nit_275 <- subset (nit, 28)
+do_275 <- subset (do, 28)
+dist_seabed_275 <- subset (dist_seabed, 28)
+mld_rel_275 <- subset (mld_relative_position, 28)
+npp_275 <-   subset (npp, 28)
+
+
+set_275_m <- brick (temp_275, 
+                sal_275,
+                nit_275, 
+                do_275,
+                dist_seabed_275, 
+                mld_rel_275,
+                npp_275)
+plot(set_275_m)
+
+#save brick
+
+writeRaster(set_275_m, 
+            filename=here::here ("data", "derived_data", "outputs_for_modelling", "depth_sets","set_275_m.tif"),
+            format="GTiff", 
+            overwrite=TRUE,
+            options=c("INTERLEAVE=BAND","COMPRESS=LZW"))
+# 29. 300
+temp_300 <- subset(temp, 29) 
+sal_300 <- subset (sal, 29)
+nit_300 <- subset (nit, 29)
+do_300 <- subset (do, 29)
+dist_seabed_300 <- subset (dist_seabed, 29)
+mld_rel_300 <- subset (mld_relative_position, 29)
+npp_300 <-   subset (npp, 29)
+
+
+set_300_m <- brick (temp_300, 
+                sal_300,
+                nit_300, 
+                do_300,
+                dist_seabed_300, 
+                mld_rel_300,
+                npp_300)
+plot(set_300_m)
+
+#save brick
+
+writeRaster(set_300_m, 
+            filename=here::here ("data", "derived_data", "outputs_for_modelling", "depth_sets","set_300_m.tif"),
+            format="GTiff", 
+            overwrite=TRUE,
+            options=c("INTERLEAVE=BAND","COMPRESS=LZW"))
+# 30. 325
+temp_325 <- subset(temp, 30) 
+sal_325 <- subset (sal, 30)
+nit_325 <- subset (nit, 30)
+do_325 <- subset (do, 30)
+dist_seabed_325 <- subset (dist_seabed, 30)
+mld_rel_325 <- subset (mld_relative_position, 30)
+npp_325 <-   subset (npp, 30)
+
+
+set_325_m <- brick (temp_325, 
+                sal_325,
+                nit_325, 
+                do_325,
+                dist_seabed_325, 
+                mld_rel_325,
+                npp_325)
+plot(set_325_m)
+
+#save brick
+
+writeRaster(set_325_m, 
+            filename=here::here ("data", "derived_data", "outputs_for_modelling", "depth_sets","set_325_m.tif"),
+            format="GTiff", 
+            overwrite=TRUE,
+            options=c("INTERLEAVE=BAND","COMPRESS=LZW"))
+# 31. 350
+temp_350 <- subset(temp, 31) 
+sal_350 <- subset (sal, 31)
+nit_350 <- subset (nit, 31)
+do_350 <- subset (do, 31)
+dist_seabed_350 <- subset (dist_seabed, 31)
+mld_rel_350 <- subset (mld_relative_position, 31)
+npp_350 <-   subset (npp, 31)
+
+
+set_350_m <- brick (temp_350, 
+                sal_350,
+                nit_350, 
+                do_350,
+                dist_seabed_350, 
+                mld_rel_350,
+                npp_350)
+plot(set_350_m)
+
+#save brick
+
+writeRaster(set_350_m, 
+            filename=here::here ("data", "derived_data", "outputs_for_modelling", "depth_sets","set_350_m.tif"),
+            format="GTiff", 
+            overwrite=TRUE,
+            options=c("INTERLEAVE=BAND","COMPRESS=LZW"))
+# 32. 375
+temp_375 <- subset(temp, 32) 
+sal_375 <- subset (sal, 32)
+nit_375 <- subset (nit, 32)
+do_375 <- subset (do, 32)
+dist_seabed_375 <- subset (dist_seabed, 32)
+mld_rel_375 <- subset (mld_relative_position, 32)
+npp_375 <-   subset (npp, 32)
+
+
+set_375_m <- brick (temp_375, 
+                sal_375,
+                nit_375, 
+                do_375,
+                dist_seabed_375, 
+                mld_rel_375,
+                npp_375)
+plot(set_375_m)
+
+#save brick
+
+writeRaster(set_375_m, 
+            filename=here::here ("data", "derived_data", "outputs_for_modelling", "depth_sets","set_375_m.tif"),
+            format="GTiff", 
+            overwrite=TRUE,
+            options=c("INTERLEAVE=BAND","COMPRESS=LZW"))
+# 33. 400
+temp_400 <- subset(temp, 33) 
+sal_400 <- subset (sal, 33)
+nit_400 <- subset (nit, 33)
+do_400 <- subset (do, 33)
+dist_seabed_400 <- subset (dist_seabed, 33)
+mld_rel_400 <- subset (mld_relative_position, 33)
+npp_400 <-   subset (npp, 33)
+
+
+set_400_m <- brick (temp_400, 
+                sal_400,
+                nit_400, 
+                do_400,
+                dist_seabed_400, 
+                mld_rel_400,
+                npp_400)
+plot(set_400_m)
+
+#save brick
+
+writeRaster(set_400_m, 
+            filename=here::here ("data", "derived_data", "outputs_for_modelling", "depth_sets","set_400_m.tif"),
+            format="GTiff", 
+            overwrite=TRUE,
+            options=c("INTERLEAVE=BAND","COMPRESS=LZW"))
+# 34. 425
+temp_425 <- subset(temp, 34) 
+sal_425 <- subset (sal, 34)
+nit_425 <- subset (nit, 34)
+do_425 <- subset (do, 34)
+dist_seabed_425 <- subset (dist_seabed, 34)
+mld_rel_425 <- subset (mld_relative_position, 34)
+npp_425 <-   subset (npp, 34)
+
+
+set_425_m <- brick (temp_425, 
+                sal_425,
+                nit_425, 
+                do_425,
+                dist_seabed_425, 
+                mld_rel_425,
+                npp_425)
+plot(set_425_m)
+
+#save brick
+
+writeRaster(set_425_m, 
+            filename=here::here ("data", "derived_data", "outputs_for_modelling", "depth_sets","set_425_m.tif"),
+            format="GTiff", 
+            overwrite=TRUE,
+            options=c("INTERLEAVE=BAND","COMPRESS=LZW"))
+# 35. 450
+temp_450 <- subset(temp, 35) 
+sal_450 <- subset (sal, 35)
+nit_450 <- subset (nit, 35)
+do_450 <- subset (do, 35)
+dist_seabed_450 <- subset (dist_seabed, 35)
+mld_rel_450 <- subset (mld_relative_position, 35)
+npp_450 <-   subset (npp, 35)
+
+
+set_450_m <- brick (temp_450, 
+                sal_450,
+                nit_450, 
+                do_450,
+                dist_seabed_450, 
+                mld_rel_450,
+                npp_450)
+plot(set_450_m)
+
+#save brick
+
+writeRaster(set_450_m, 
+            filename=here::here ("data", "derived_data", "outputs_for_modelling", "depth_sets","set_450_m.tif"),
+            format="GTiff", 
+            overwrite=TRUE,
+            options=c("INTERLEAVE=BAND","COMPRESS=LZW"))
+# 36. 475
+temp_475 <- subset(temp, 36) 
+sal_475 <- subset (sal, 36)
+nit_475 <- subset (nit, 36)
+do_475 <- subset (do, 36)
+dist_seabed_475 <- subset (dist_seabed, 36)
+mld_rel_475 <- subset (mld_relative_position, 36)
+npp_475 <-   subset (npp, 36)
+
+
+set_475_m <- brick (temp_475, 
+                sal_475,
+                nit_475, 
+                do_475,
+                dist_seabed_475, 
+                mld_rel_475,
+                npp_475)
+plot(set_475_m)
+
+#save brick
+
+writeRaster(set_475_m, 
+            filename=here::here ("data", "derived_data", "outputs_for_modelling", "depth_sets","set_475_m.tif"),
+            format="GTiff", 
+            overwrite=TRUE,
+            options=c("INTERLEAVE=BAND","COMPRESS=LZW"))
+# 37. 500
+temp_500 <- subset(temp, 37) 
+sal_500 <- subset (sal, 37)
+nit_500 <- subset (nit, 37)
+do_500 <- subset (do, 37)
+dist_seabed_500 <- subset (dist_seabed, 37)
+mld_rel_500 <- subset (mld_relative_position, 37)
+npp_500 <-   subset (npp, 37)
+
+
+set_500_m <- brick (temp_500, 
+                sal_500,
+                nit_500, 
+                do_500,
+                dist_seabed_500, 
+                mld_rel_500,
+                npp_500)
+plot(set_500_m)
+
+#save brick
+
+writeRaster(set_500_m, 
+            filename=here::here ("data", "derived_data", "outputs_for_modelling", "depth_sets","set_500_m.tif"),
+            format="GTiff", 
+            overwrite=TRUE,
+            options=c("INTERLEAVE=BAND","COMPRESS=LZW"))
+# 38. 550
+temp_550 <- subset(temp, 38) 
+sal_550 <- subset (sal, 38)
+nit_550 <- subset (nit, 38)
+do_550 <- subset (do, 38)
+dist_seabed_550 <- subset (dist_seabed, 38)
+mld_rel_550 <- subset (mld_relative_position, 38)
+npp_550 <-   subset (npp, 38)
+
+
+set_550_m <- brick (temp_550, 
+                sal_550,
+                nit_550, 
+                do_550,
+                dist_seabed_550, 
+                mld_rel_550,
+                npp_550)
+plot(set_550_m)
+
+#save brick
+
+writeRaster(set_550_m, 
+            filename=here::here ("data", "derived_data", "outputs_for_modelling", "depth_sets","set_550_m.tif"),
+            format="GTiff", 
+            overwrite=TRUE,
+            options=c("INTERLEAVE=BAND","COMPRESS=LZW"))
+# 39. 600
+temp_600 <- subset(temp, 39) 
+sal_600 <- subset (sal, 39)
+nit_600 <- subset (nit, 39)
+do_600 <- subset (do, 39)
+dist_seabed_600 <- subset (dist_seabed, 39)
+mld_rel_600 <- subset (mld_relative_position, 39)
+npp_600 <-   subset (npp, 39)
+
+
+set_600_m <- brick (temp_600, 
+                sal_600,
+                nit_600, 
+                do_600,
+                dist_seabed_600, 
+                mld_rel_600,
+                npp_600)
+plot(set_600_m)
+
+#save brick
+
+writeRaster(set_600_m, 
+            filename=here::here ("data", "derived_data", "outputs_for_modelling", "depth_sets","set_600_m.tif"),
+            format="GTiff", 
+            overwrite=TRUE,
+            options=c("INTERLEAVE=BAND","COMPRESS=LZW"))
+# 40. 650
+temp_650 <- subset(temp, 40) 
+sal_650 <- subset (sal, 40)
+nit_650 <- subset (nit, 40)
+do_650 <- subset (do, 40)
+dist_seabed_650 <- subset (dist_seabed, 40)
+mld_rel_650 <- subset (mld_relative_position, 40)
+npp_650 <-   subset (npp, 40)
+
+
+set_650_m <- brick (temp_650, 
+                sal_650,
+                nit_650, 
+                do_650,
+                dist_seabed_650, 
+                mld_rel_650,
+                npp_650)
+plot(set_650_m)
+
+#save brick
+
+writeRaster(set_650_m, 
+            filename=here::here ("data", "derived_data", "outputs_for_modelling", "depth_sets","set_650_m.tif"),
+            format="GTiff", 
+            overwrite=TRUE,
+            options=c("INTERLEAVE=BAND","COMPRESS=LZW"))
+# 41. 700
+temp_700 <- subset(temp, 41) 
+sal_700 <- subset (sal, 41)
+nit_700 <- subset (nit, 41)
+do_700 <- subset (do, 41)
+dist_seabed_700 <- subset (dist_seabed, 41)
+mld_rel_700 <- subset (mld_relative_position, 41)
+npp_700 <-   subset (npp, 41)
+
+
+set_700_m <- brick (temp_700, 
+                sal_700,
+                nit_700, 
+                do_700,
+                dist_seabed_700, 
+                mld_rel_700,
+                npp_700)
+plot(set_700_m)
+
+#save brick
+
+writeRaster(set_700_m, 
+            filename=here::here ("data", "derived_data", "outputs_for_modelling", "depth_sets","set_700_m.tif"),
+            format="GTiff", 
+            overwrite=TRUE,
+            options=c("INTERLEAVE=BAND","COMPRESS=LZW"))
+# 42. 750
+temp_750 <- subset(temp, 42) 
+sal_750 <- subset (sal, 42)
+nit_750 <- subset (nit, 42)
+do_750 <- subset (do, 42)
+dist_seabed_750 <- subset (dist_seabed, 42)
+mld_rel_750 <- subset (mld_relative_position, 42)
+npp_750 <-   subset (npp, 42)
+
+
+set_750_m <- brick (temp_750, 
+                sal_750,
+                nit_750, 
+                do_750,
+                dist_seabed_750, 
+                mld_rel_750,
+                npp_750)
+plot(set_750_m)
+
+#save brick
+
+writeRaster(set_750_m, 
+            filename=here::here ("data", "derived_data", "outputs_for_modelling", "depth_sets","set_750_m.tif"),
+            format="GTiff", 
+            overwrite=TRUE,
+            options=c("INTERLEAVE=BAND","COMPRESS=LZW"))
+# 43. 800
+temp_800 <- subset(temp, 43) 
+sal_800 <- subset (sal, 43)
+nit_800 <- subset (nit, 43)
+do_800 <- subset (do, 43)
+dist_seabed_800 <- subset (dist_seabed, 43)
+mld_rel_800 <- subset (mld_relative_position, 43)
+npp_800 <-   subset (npp, 43)
+
+
+set_800_m <- brick (temp_800, 
+                sal_800,
+                nit_800, 
+                do_800,
+                dist_seabed_800, 
+                mld_rel_800,
+                npp_800)
+plot(set_800_m)
+
+#save brick
+
+writeRaster(set_800_m, 
+            filename=here::here ("data", "derived_data", "outputs_for_modelling", "depth_sets","set_800_m.tif"),
+            format="GTiff", 
+            overwrite=TRUE,
+            options=c("INTERLEAVE=BAND","COMPRESS=LZW"))
+# 44. 850
+temp_850 <- subset(temp, 44) 
+sal_850 <- subset (sal, 44)
+nit_850 <- subset (nit, 44)
+do_850 <- subset (do, 44)
+dist_seabed_850 <- subset (dist_seabed, 44)
+mld_rel_850 <- subset (mld_relative_position, 44)
+npp_850 <-   subset (npp, 44)
+
+
+set_850_m <- brick (temp_850, 
+                sal_850,
+                nit_850, 
+                do_850,
+                dist_seabed_850, 
+                mld_rel_850,
+                npp_850)
+plot(set_850_m)
+
+#save brick
+
+writeRaster(set_850_m, 
+            filename=here::here ("data", "derived_data", "outputs_for_modelling", "depth_sets","set_850_m.tif"),
+            format="GTiff", 
+            overwrite=TRUE,
+            options=c("INTERLEAVE=BAND","COMPRESS=LZW"))
+# 45. 900
+temp_900 <- subset(temp, 45) 
+sal_900 <- subset (sal, 45)
+nit_900 <- subset (nit, 45)
+do_900 <- subset (do, 45)
+dist_seabed_900 <- subset (dist_seabed, 45)
+mld_rel_900 <- subset (mld_relative_position, 45)
+npp_900 <-   subset (npp, 45)
+
+
+set_900_m <- brick (temp_900, 
+                sal_900,
+                nit_900, 
+                do_900,
+                dist_seabed_900, 
+                mld_rel_900,
+                npp_900)
+plot(set_900_m)
+
+#save brick
+
+writeRaster(set_900_m, 
+            filename=here::here ("data", "derived_data", "outputs_for_modelling", "depth_sets","set_900_m.tif"),
+            format="GTiff", 
+            overwrite=TRUE,
+            options=c("INTERLEAVE=BAND","COMPRESS=LZW"))
+# 46. 95
+temp_950 <- subset(temp, 46) 
+sal_950 <- subset (sal, 46)
+nit_950 <- subset (nit, 46)
+do_950 <- subset (do, 46)
+dist_seabed_950 <- subset (dist_seabed, 46)
+mld_rel_950 <- subset (mld_relative_position, 46)
+npp_950 <-   subset (npp, 46)
+
+
+set_950_m <- brick (temp_950, 
+                sal_950,
+                nit_950, 
+                do_950,
+                dist_seabed_950, 
+                mld_rel_950,
+                npp_950)
+plot(set_950_m)
+
+#save brick
+
+writeRaster(set_950_m, 
+            filename=here::here ("data", "derived_data", "outputs_for_modelling", "depth_sets","set_950_m.tif"),
+            format="GTiff", 
+            overwrite=TRUE,
+            options=c("INTERLEAVE=BAND","COMPRESS=LZW"))
+# 47. 1000
+temp_1000 <- subset(temp, 47) 
+sal_1000 <- subset (sal, 47)
+nit_1000 <- subset (nit, 47)
+do_1000 <- subset (do, 47)
+dist_seabed_1000 <- subset (dist_seabed, 47)
+mld_rel_1000 <- subset (mld_relative_position, 47)
+npp_1000 <-   subset (npp, 47)
+
+
+set_1000_m <- brick (temp_1000, 
+                sal_1000,
+                nit_1000, 
+                do_1000,
+                dist_seabed_1000, 
+                mld_rel_1000,
+                npp_1000)
+plot(set_1000_m)
+
+#save brick
+
+writeRaster(set_1000_m, 
+            filename=here::here ("data", "derived_data", "outputs_for_modelling", "depth_sets","set_1000_m.tif"),
+            format="GTiff", 
+            overwrite=TRUE,
+            options=c("INTERLEAVE=BAND","COMPRESS=LZW"))
+
+```
+
