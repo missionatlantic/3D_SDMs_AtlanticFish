@@ -40,6 +40,9 @@ FAO_Atl <- FAO[FAO$OCEAN=="Atlantic",]
 
 plot(FAO_Atl)
 
+#Save shp 
+raster::shapefile(x = FAO_Atl, file = here::here("data", "raw_data","FAO_AREAS","FAO_Atl_bs.shp"))
+
 #remove Black Sea subarea
 
 Black_Sea <- FAO_Atl[FAO_Atl$ID=="20",]
@@ -63,7 +66,7 @@ plot(FAO_Atl_no_black_sea)
 FAO_Atl_no_black_sea <- sf::as_Spatial(FAO_Atl_no_black_sea)
 
 #Save shp 
-raster::shapefile(x = FAO_Atl_no_black_sea, file = here::here("data", "raw_data","FAO_Areas","FAO_Atl.shp"))
+raster::shapefile(x = FAO_Atl_no_black_sea, file = here::here("data", "raw_data","FAO_AREAS","FAO_Atl.shp"))
 
 # dissolve the polygons
 FAO_Atl_no_black_sea_dissolved <- aggregate(FAO_Atl_no_black_sea)
@@ -76,7 +79,7 @@ FAO_Atl_dissolved <- FAO_Atl_no_black_sea_dissolved
 plot(FAO_Atl_dissolved)
 
 #Save shp 
-raster::shapefile(x = FAO_Atl_no_black_sea_dissolved, file = here::here("data", "raw_data","FAO_Areas","FAO_Atlantic_dissolved.shp"), overwrite=TRUE)
+raster::shapefile(x = FAO_Atl_no_black_sea_dissolved, file = here::here("data", "raw_data","FAO_AREAS","FAO_Atlantic_dissolved.shp"), overwrite=TRUE)
 ```
 
 ### Environmental data
