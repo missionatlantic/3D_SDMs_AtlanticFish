@@ -43,7 +43,7 @@ library (here)
 Load data
 ```{r}
 #Atlantic cells
-load(here::here ("data", "derived_data", "01_species_catches", "cell_atl.rds"))
+load(here::here ("data", "derived_data", "01_species_catches", "cell_atl_with_bs.rds"))
 
 
 ##General key to obtain ID from non industrial cells
@@ -174,8 +174,142 @@ head(total_sp_catches)
 
 summary(total_sp_catches)
 
+```
+
+Repeat the same but using the cells that do not include the Black Sea. 
+
+```{r}
+#Atlantic cells without the Black sea
+load(here::here ("data", "derived_data", "01_species_catches", "cell_atl.rds"))
+
+#######################################################################
+## 2015 NON industrial 
+#######################################################################
+
+####Load non industrial catches for 2015
+Ndata_2015<-read.csv(here::here("data", "raw_data", "Global_Fisheries_Landings_v4", "CatchNInd2015_2015.csv"))
+
+###Subset keeping only catches from matching Atalntic cells
+Ndata_2015<-right_join(Ndata_2015,cell_atl, by="Cell")
+
+###Delete na data
+Ndata_2015 <-na.omit(Ndata_2015)
+
+### create new colum with reported and IUU
+Ndata_2015<- Ndata_2015 %>% 
+  mutate(suma= Reported+ IUU)
+
+
+Nind2015<- left_join(Ndata_2015,NInd, by="ID")
+
+# library(ggplot2)
+# map_NInd <- ggplot() +  geom_point(data=Nind2015, aes(x=LonCentre, y=LatCentre), color="black")
+# plot(map_NInd)
+
+Nind2015_sum<-Nind2015%>% 
+  dplyr::group_by(IYear, Taxonkey) %>%
+  dplyr::summarise(suma=sum(suma, na.rm=T)) %>% 
+  dplyr::arrange(Taxonkey)
+
+
+######################################################################
+## 2015 industrial 
+#######################################################################
+
+####Load industrial catches
+Idata_2015<-read.csv(here::here("data", "raw_data", "Global_Fisheries_Landings_v4", "CatchInd2015_2015.csv"))
+
+###Subset keeping only catches from matching Atalntic cells
+Idata_2015<-right_join(Idata_2015,cell_atl, by="Cell")
+
+###delete NAs
+Idata_2015 <-na.omit(Idata_2015)
+
+### create new colum with reported and IUU
+Idata_2015<- Idata_2015 %>% 
+  dplyr::mutate(suma= Reported+ IUU)
+
+Ind2015<- left_join(Idata_2015,Ind, by="ID")
+
+#map_Ind <- ggplot() +  geom_point(data=Ind2015, aes(x=LonCentre, y=LatCentre), color="black")
+#plot(map_Ind)
+
+Ind2015_sum<-Ind2015 %>% 
+  dplyr::group_by(IYear, Taxonkey) %>%
+  dplyr::summarise(suma=sum(suma, na.rm=T)) %>% 
+  dplyr::arrange(Taxonkey)
+
+######################################################################
+## 2010-2014 No industrial 
+#######################################################################
+
+#### Load non industrial catches
+Ndata_2010_2014<-read.csv(here::here("data", "raw_data", "Global_Fisheries_Landings_v4",  "CatchNInd2010_2014.csv"))
+
+###subset 
+Ndata_2010_2014<-semi_join(Ndata_2010_2014,cell_atl, by="Cell")
+
+
+### new column
+Ndata_2010_2014<- Ndata_2010_2014 %>% 
+  mutate(suma= Reported+ IUU)
+
+Nind2010_2014<- left_join(Ndata_2010_2014,NInd, by="ID")
+
+Nind2010_2014_sum<-Nind2010_2014%>% 
+  dplyr::group_by(IYear, Taxonkey) %>%
+  dplyr::summarise(suma=sum(suma, na.rm=T)) %>% 
+  dplyr::arrange(Taxonkey)
+
+######################################################################
+## 2010-2014 industrial 
+#######################################################################
+
+####Load industrial
+Idata_2010_2014<-read.csv(here::here("data", "raw_data", "Global_Fisheries_Landings_v4", "CatchInd2010_2014.csv"))
+
+###Subset
+Idata_2010_2014<-semi_join(Idata_2010_2014,cell_atl, by="Cell")
+
+### New column 
+Idata_2010_2014<- Idata_2010_2014 %>% 
+  mutate(suma= Reported+ IUU)
+
+Ind2010_2014<- left_join(Idata_2010_2014,Ind, by="ID")
+
+Ind2010_2014_sum<-Ind2010_2014%>% 
+  dplyr::group_by(IYear, Taxonkey) %>%
+  dplyr::summarise(suma=sum(suma, na.rm=T)) %>% 
+  dplyr::arrange(Taxonkey)
+
+
+####Bind all data **********************************
+
+total1<-rbind(Nind2015_sum,Nind2010_2014_sum,Ind2015_sum,Ind2010_2014_sum) %>% 
+  dplyr::group_by(Taxonkey,IYear) %>%
+  dplyr::summarise(suma_catches=sum(suma, na.rm=T)) 
+
+total2<-total1 %>% 
+  dplyr::group_by(Taxonkey) %>%
+  dplyr::summarise(media=mean(suma_catches, na.rm=T)) 
+
+total_sp_catches2<-left_join(total2,sp_key, by="Taxonkey") %>% 
+  dplyr::arrange(desc(media))
+head(total_sp_catches2)
+
+total_sp_catches_complete <- left_join (total_sp_catches, total_sp_catches2, by="Taxonkey")
+
+total_sp_catches_complete <- total_sp_catches_complete %>% 
+  dplyr::select (-c(TaxonName.y, CommonName.y)) %>% 
+  dplyr::rename (mean_alt = "media.x", 
+                 TaxonName = "TaxonName.x", 
+                 CommonName = "CommonName.x", 
+                 mean_no_bs = "media.y")
+
+summary(total_sp_catches_complete)
+
 #Save the table with total catches from 2010-2015 for the Atlantic and the mean catches value by species
 
-write.csv(total_sp_catches,file= here::here("data", "derived_data", "01_species_catches", "total_sp_catches_raw.csv"))
+write.csv(total_sp_catches_complete,file= here::here("data", "derived_data", "01_species_catches", "total_sp_catches_raw.csv"))
 ```
 

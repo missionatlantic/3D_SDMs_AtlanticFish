@@ -42,27 +42,27 @@ list_validated <- drop_na(list)
 head(list_validated)
 
 
-write.csv(list_validated,file=here::here ("data", "derived_data", "01_species_catches", "spp_list_validated.csv"))
+#write.csv(list_validated,file=here::here ("data", "derived_data", "01_species_catches", "spp_list_validated_Atlantic.csv"))
 
 #select top 75 species of the validated list
 top_75_spp <- list_validated %>% 
-  top_n(75, media) 
+  top_n(75, mean_alt) 
 
-write.csv(top_75_spp,file=here::here ("data", "derived_data", "01_species_catches", "top_75_spp.csv"))
+#write.csv(top_75_spp,file=here::here ("data", "derived_data", "01_species_catches", "top_75_spp_Atlantic.csv"))
 
 #select the 5 tuna species that we will model due to their commercial importance
 tunas <- list_validated %>% 
   dplyr::filter(Taxonkey == 600107 |Taxonkey == 600142 | Taxonkey == 600143| Taxonkey == 600146| Taxonkey == 600147) 
 head(tunas)
 
-write.csv(tunas,file=here::here ("data", "derived_data", "01_species_catches", "tunas.csv"))
+#write.csv(tunas,file=here::here ("data", "derived_data", "01_species_catches", "tunas_Atlantic.csv"))
 
 #join both table to get the species list that we are going to use to get the species distribution data
 #we use unique to add only those tunas that are not in the top 75 list
 fish_and_tuna_list <- unique(rbind(top_75_spp, tunas)) %>% 
-  arrange(desc(media))
+  dplyr::arrange(desc(mean_alt))
 
-write.xlsx(fish_and_tuna_list, file=here::here ("data", "derived_data", "01_species_catches", "fish_and_tuna_long_list_75.xlsx"),append=TRUE, col.names=TRUE)
+write.xlsx(fish_and_tuna_list, file=here::here ("data", "derived_data", "01_species_catches", "fish_and_tuna_long_list_75_Atlantic.xlsx"),append=TRUE, col.names=TRUE)
 
 #we are going to open and edit this last excel file: 
 # adding SP column 

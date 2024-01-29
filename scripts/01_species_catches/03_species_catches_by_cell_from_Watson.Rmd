@@ -38,7 +38,7 @@ library (readxl)
 
 Load data
 ```{r}
-#Atlantic cells
+#Atlantic cells without black sea
 load(here::here ("data", "derived_data", "01_species_catches", "cell_atl.rds"))
 
 ##General key to obtain ID from non industrial cells
