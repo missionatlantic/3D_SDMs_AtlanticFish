@@ -1,6 +1,6 @@
 ---
 title: "Extract_env_to_pseudoabsences"
-author: "Mireia Valle based on the code used to create the points over the 3D grid for the entire Atlantic"
+author: "Mireia Valle based on the code used to extract environment to the pseudoabsences over the entire Atlantic"
 date: "2023-09-20"
 output: html_document
 editor_options: 
@@ -187,7 +187,7 @@ summary (data_noNA)
 
 # save the file externally
 
-save(data,file=here::here ("data","derived_data",  "03_create_pseudoabsences", "by_species", paste0("pseudoabsences_environmental_SP", i, ".RData")))
+# save(data,file=here::here ("data","derived_data",  "03_create_pseudoabsences", "by_species", paste0("pseudoabsences_environmental_SP", i, ".RData")))
 
 }
 
