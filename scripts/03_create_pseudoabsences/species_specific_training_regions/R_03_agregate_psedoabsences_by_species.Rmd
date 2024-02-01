@@ -1,0 +1,196 @@
+---
+title: "Agregate psedoabsences for each species"
+author: "Mireia Valle based on the code used to create the points over the 3D grid for the entire Atlantic"
+date: "2023-09-20"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warming = FALSE)
+```
+
+Script to create aggregate data into lon, lat and depth grids.
+
+# Loading required libraries
+
+```{r}
+library (here) #enable easy file referencing 
+library(dplyr) #data cleaning
+library(ggplot2) #plotting
+library(cowplot) #plotting more than one plot
+library(rgeos) #mapping
+library(sp) #mapping
+library(rgdal) #mapping
+library(maptools) #mapping
+library(maps)        # some basic country maps
+library(mapdata)     # higher resolution maps
+library(marmap)      # access global topography data
+library(plyr) #mapping
+library(dplyr)
+library(tidyverse)
+library(readxl)
+library(RColorBrewer)# plots
+library(ggpointdensity)
+library(gridExtra)
+library(ncdf4) # to read netcdf
+library(grid)
+
+theme_set(theme_bw(base_size=14) + theme(plot.title = element_text(hjust = 0.5)))
+```
+
+# load species list
+```{r}
+species <- read.csv (here::here ("data", "derived_data", "outputs_for_modelling", "species_for_modelling.csv"),  sep = ",")
+
+species <- species %>% 
+  dplyr:: select (-X)
+
+n <- data.frame(species$SP)
+
+names(n)
+
+n <- n %>% 
+  dplyr::rename (id = "species.SP")
+
+n <- str_remove(n$id, "SP")
+
+n <- as.numeric (n)
+
+```
+
+# Load data
+```{r}
+for(i in n ){
+
+#Load pseudoabsence data
+load(here::here  ("data","derived_data",  "03_create_pseudoabsences", "by_species", paste0("pseudo_absences_SP", i, ".RData")))
+
+# Gridded latitude and longitude ------------------------------------------
+
+# Load bathy data from our study area that is the one used to resample the others
+load(here::here ("data", "derived_data", "variables", "BATHY", "bathy_atl.RData"))
+
+# transform to data frame
+bathy_df <- raster::as.data.frame(bathy_atl,xy=TRUE)
+
+# Grid for latitude: 
+
+# sort unique values of latitude
+lat_grid <- sort(unique(bathy_df$y))
+
+# mid-points between the unique values
+lat_int <- (lat_grid[-1]+lat_grid[-length(lat_grid)])/2
+
+# add extremes to the breakpoints
+lat_brks <- c( lat_grid[1]-(lat_int[1]-lat_grid[1]), 
+               lat_int, 
+               lat_grid[length(lat_grid)]+(lat_int[length(lat_int)]-lat_grid[length(lat_int)]))
+
+# sort unique values of longitude
+lon_grid <- sort(unique(bathy_df$x))
+
+# mid-points between the unique values
+lon_int <- (lon_grid[-1]+lon_grid[-length(lon_grid)])/2
+
+# add extremes to the breakpoints
+lon_brks <- c( lon_grid[1]-(lon_int[1]-lon_grid[1]), 
+               lon_int, 
+               lon_grid[length(lon_grid)]+(lon_int[length(lon_int)]-lon_grid[length(lon_int)]))
+
+
+# Gridded depth ---------------------------------------------------
+
+# load 3D variable to extract depth values
+
+nc_data <- nc_open(here::here("data", "raw_data", "variables", "TEMP", "woa18_decav81B0_t00_04.nc"))
+
+# sort unique values of depth
+
+depth_grid <- ncvar_get(nc_data, "depth")
+depth_grid <- depth_grid[1:48] # up to 1050 m depth
+
+# mid-points between the unique values
+
+depth_int <- (depth_grid[-1]+depth_grid[-length(depth_grid)])/2
+
+# add extremes to the breakpoints
+
+depth_brks <- c( -01, 
+               depth_int, 
+               depth_grid[length(depth_grid)]+(depth_int[length(depth_int)]-depth_grid[length(depth_int)]))
+
+
+# Basic map for plotting --------------------------------------------------
+
+# basic map data
+
+global <- map_data("worldHires")
+
+# get bathymetry data
+
+# bathy <- getNOAA.bathy(lon1=-83,lon2=20,lat1=-90,lat2=90, resolution = 4, keep=FALSE, antimeridian=FALSE)
+# bathy.df <- fortify(bathy)
+
+# basic ggplot
+
+p0 <- ggplot() +
+  # geom_contour(data=bathy.df, aes(x,y,z=z), breaks=c(-100, -200), col="grey")+
+  annotation_map(map=global, fill="grey")+
+  coord_sf(xlim=c(-90,50), ylim=c(-90,90))+
+  xlab("")+
+  ylab("")
+
+
+# Grouped species data ----------------------------------------------------
+
+  # calculate the corresponding gridded lon, lat and depth values
+  
+  PSEUDO <- ps.sp %>% 
+    dplyr::rename (
+      lon_grid = lon, 
+      lat_grid = lat,
+      depth_grid = depth)
+    
+  
+  # Group by cell to calculate the number of points
+  
+  grouped_PSEUDO <- PSEUDO %>% 
+    group_by(lon_grid, lat_grid, depth_grid) %>%
+    dplyr::summarise(n = n()) %>% 
+    mutate(status=0) 
+  
+
+  # save files after removing duplicates
+save(grouped_PSEUDO,file=here::here ("data","derived_data",  "03_create_pseudoabsences", "by_species", paste0("pseudoabsences_grouped_SP", i, ".RData")))
+
+}
+    
+# some plots (they take time because there are too many points)
+p1 <- p0 +
+    geom_point(data=PSEUDO, aes(x=lon_grid, y=lat_grid), col="red", cex=0.3)+
+    ggtitle(paste0("Raw data ", " n=",nrow(PSEUDO)))
+
+  p2 <- p0 +
+    geom_point(data=grouped_PSEUDO, aes(x=lon_grid, y=lat_grid), col="red", cex=0.3)+
+    ggtitle(paste0("Gridded data ", " n=",nrow(grouped_PSEUDO)))
+
+  grid.arrange(p1, p2, nrow=1,
+               top = textGrob(paste0("Pseudoabsences"),gp=gpar(fontsize=20,font=3)))
+  #
+  # # Plotting species occurrence points along the depth gradient
+  #
+  # p1 <- ggplot(PSEUDO, aes(x = lat_grid, y = -depth_grid)) +
+  #   geom_pointdensity(alpha=0.3) +
+  #   scale_color_viridis_c()+
+  #   ggtitle("Raw data")
+  # p2 <- ggplot(grouped_PSEUDO, aes(x = lat_grid, y = -depth_grid)) +
+  #   geom_pointdensity(alpha=0.3) +
+  #   scale_color_viridis_c()+
+  #   ggtitle("Gridded data")
+  # grid.arrange(p1, p2, nrow=1)
+
+  # dev.off()
+```
+

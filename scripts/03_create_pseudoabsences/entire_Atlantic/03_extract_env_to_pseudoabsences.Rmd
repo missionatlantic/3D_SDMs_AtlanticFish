@@ -1,0 +1,170 @@
+---
+title: "03_extract_env_to_pseudo"
+author: "Leire Ibairriaga & Mireia Valle"
+date: "2021-10-11"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+# Script information
+
+This script extracts environmental variables from the rasters for a set of points. Project IM-20-MISSION
+This is a modification by Leire Ibaibarriaga of the script developed by Eduardo Ramirez and Mireia Valle
+Last modified by Mireia Valle (mvalle@azti.es) 
+
+# Load libraries
+```{r}
+library(raster) # package for raster manipulation
+library(here)
+library(dplyr)
+library(rgdal) #mapping
+library(ggplot2)
+```
+
+# Load environmental variables
+```{r}
+#Loading 3D variables
+
+#1. temperature 
+temp <- brick(here::here("data","derived_data", "outputs_for_modelling","variables","temp_3d_1000.tif"))
+
+#2. salinity
+sal <- brick(here::here("data","derived_data","outputs_for_modelling","variables","sal_3d_1000.tif"))
+
+#3. nitrate
+nit <- brick(here::here("data","derived_data","outputs_for_modelling","variables","nit_3d_1000.tif"))
+
+#6. mld relative position
+mld_relative_position<- brick(here::here("data","derived_data","outputs_for_modelling","variables","mld_relative_position_1000.tif"))
+
+#7. npp we had interpolated npp in log + 1 log (npp + 1)
+npp <- brick(here::here("data","derived_data","outputs_for_modelling","variables","npp.inter_log.tif"))
+
+#8. distance to seabed
+dist_seabed <- brick(here::here("data","derived_data","outputs_for_modelling","variables","dist_seabed_1000.tif"))
+
+# selecting superficial layer from all variables
+
+tempsup <- subset (temp, 1)
+salsup <- subset (sal, 1)
+nitsup <- subset (nit, 1)
+dist_seabed_sup <- subset (dist_seabed, 1)
+mld_rel_sup <- subset (mld_relative_position, 1)
+npp_sup <- subset (npp, 1)
+
+#list of the objects loaded: 
+ls()
+mylist <- list(dist_seabed, 
+               dist_seabed_sup, 
+               mld_rel_sup, 
+               mld_relative_position, 
+               nit, 
+               nitsup,
+               sal, 
+               salsup, 
+               temp, 
+               tempsup,
+               npp, 
+               npp_sup)
+               
+# check the class of these objects (They are RasterLayer and RasterBrick)
+lapply(mylist, class)
+
+# check the dimension of these objects. Note that the dimensions do not match!! 
+lapply(mylist, dim)
+
+#~ Load pseudoabsence data----------------------------------------
+
+load (here::here ("data", "derived_data", "03_create_pseudoabsences", "pseudoabsences_grouped.RData"))
+
+data<-grouped_PSEUDO
+
+dim(data)
+head(data)
+
+data <- data %>% 
+  dplyr::rename (lon = lon_grid, 
+                 lat = lat_grid, 
+                 depth = depth_grid)
+
+## Extract environmental data ----------------------------
+
+load(here::here ("data", "raw_data", "variables", "DEPTH", "depth.RData"))
+
+
+# extract values for raster with one layer
+sst <- raster::extract(tempsup, cbind(data$lon, data$lat), method="simple",df=TRUE)[,-1]
+sss <- raster::extract(salsup, cbind(data$lon, data$lat), method="simple",df=TRUE)[,-1]
+nit.s <- raster::extract(nitsup, cbind(data$lon, data$lat), method="simple",df=TRUE)[,-1]
+dist_seabed.s <- raster::extract(dist_seabed_sup, cbind(data$lon, data$lat), method="simple",df=TRUE)[,-1]
+mld_rel.s <- raster::extract(mld_rel_sup, cbind(data$lon, data$lat), method="simple",df=TRUE)[,-1]
+npp.s <- raster::extract(npp_sup, cbind(data$lon, data$lat), method="simple",df=TRUE)[,-1]
+
+# obtain the index that indicates the depth layer
+idx <- match(data$depth, depth) 
+
+# extract variables from rasters with many layers
+aux1 <- raster::extract(temp, cbind(data$lon, data$lat), layer=1, nl=length(depth), method="simple",df=TRUE)
+aux2 <- raster::extract(sal, cbind(data$lon, data$lat), layer=1, nl=length(depth), method="simple",df=TRUE)
+aux3 <- raster::extract(nit, cbind(data$lon, data$lat), layer=1, nl=length(depth), method="simple",df=TRUE)
+aux4 <- raster::extract(dist_seabed, cbind(data$lon, data$lat), layer=1, nl=length(depth), method="simple",df=TRUE)
+aux5 <- raster::extract(mld_relative_position, cbind(data$lon, data$lat), layer=1, nl=length(depth), method="simple",df=TRUE)
+aux6 <- raster::extract(npp, cbind(data$lon, data$lat), layer=1, nl=length(depth), method="simple",df=TRUE)
+
+# select the layer for the corresponding depth
+
+temp.v <- sapply(1:length(idx), function(i) aux1[i, 1+idx[i]]) # add 1 to the column index, because the first column is the ID
+sal.v <- sapply(1:length(idx), function(i) aux2[i, 1+idx[i]])
+nit.v <- sapply(1:length(idx), function(i) aux3[i, 1+idx[i]])
+dist_seabed.v <- sapply(1:length(idx), function(i) aux4[i, 1+idx[i]])
+mld_relative_position.v <- sapply(1:length(idx), function(i) aux5[i, 1+idx[i]])
+npp.v <- sapply(1:length(idx), function(i) aux6[i, 1+idx[i]])
+
+# concatenate all the environmental variables
+
+envdata <- data.frame(sst,
+                      temp.v, 
+                      sss,
+                      sal.v,
+                      nit.s ,
+                      nit.v ,
+                      dist_seabed.s ,
+                      dist_seabed.v ,
+                      mld_rel.s ,
+                      mld_relative_position.v ,
+                      npp.s ,
+                      npp.v)
+
+# concatenate the environmental variables and the data
+
+data <- cbind(data, envdata)
+head(data)
+dim(data)
+summary(data)
+
+## plot
+
+data_noNA <- data[complete.cases(data), ]
+summary (data_noNA)
+
+### Loading study area
+
+#Load study area
+FAO_Atl <- readOGR(here::here("data", "raw_data", "FAO_AREAS", "FAO_Atl.shp"))
+
+plot(FAO_Atl)
+
+ggplot() +
+  geom_path(data = FAO_Atl, 
+            aes(x = long, y = lat, group = group),
+            color = 'gray', size = .2) +
+  geom_point(data=data_noNA, aes(x=lon, y=lat, colour = "status")) 
+
+
+# save the file externally
+
+save(data, file = here::here ("data", "derived_data", "03_create_pseudoabsences", "pseudoabsences_environmental.RData"))
+
+```
+

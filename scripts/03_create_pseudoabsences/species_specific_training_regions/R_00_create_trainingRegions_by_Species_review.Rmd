@@ -1,0 +1,121 @@
+---
+title: "Create training regions for each species"
+author: "Mireia Valle following Owens and Rahbek (2022)"
+date: "2023-09-20"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warming = FALSE)
+```
+
+Script to generate Repeatable Training Regions using VoluModel package and the steps from: https://hannahlowens.github.io/voluModel/articles/c_DataSampling.html
+
+
+Owens H, Rahbek C (2022). _voluModel: Modeling Species Distributions in Three Dimensions_. doi:10.5281/zenodo.7813394  (URL: https://doi.org/10.5281/zenodo.7813394), R package version 0.2.0, <URL:http://CRAN.R-project.org/package=voluModel>.
+
+# Loading required libraries
+
+```{r}
+
+library(voluModel)
+library (here) #enable easy file referencing 
+library(dplyr) # To filter data
+library(ggplot2) # For fancy plotting
+library(terra) # Now being transitioned in
+library(stringr)
+library(readxl)
+library(rgdal)
+library(sf)
+```
+
+Loading spatial data
+```{r}
+#For mapping 
+land <- rnaturalearth::ne_countries(scale = "small", returnclass = "sf")[1]
+
+FAO<- readOGR(here::here("data", "raw_data", "FAO_AREAS", "FAO_AREAS.shp"))
+
+#Selecting Atlantic FAO regions
+FAO_Atl <- FAO[FAO$OCEAN=="Atlantic",]
+
+#select Black Sea
+
+Black_Sea <- FAO_Atl[FAO_Atl$ID=="20",]
+
+# transform to sf object
+Black_Sea.sf <- st_as_sf(Black_Sea)
+
+plot (Black_Sea.sf[1])
+```
+
+Loading species data
+```{r}
+# load species data
+
+species <- read.csv (here::here ("data", "derived_data", "outputs_for_modelling", "species_for_modelling.csv"),  sep = ",")
+
+species <- species %>% 
+  dplyr:: select (-X)
+
+n <- data.frame(species$SP)
+
+names(n)
+
+n <- n %>% 
+  dplyr::rename (id = "species.SP")
+
+n <- str_remove(n$id, "SP")
+
+n <- as.numeric (n)
+```
+
+Loop to create training regions for each species. marineBackground function: If the argument buff is not supplied, a buffer is calculated by taking the mean between the 10th and 90th percentile of horizontal distances between occurrence points.
+```{r}
+for(i in n ){
+  
+  #Load species occurrences aggregated
+ # load(here::here("data","derived_data", "02_species_occurrences", "03_species_occurrences_aggregated", paste0("SP",i,".Rdata")))
+   
+  #Load species occurrences from Valle et al 2024 in order to get the same outputs 
+  load(here::here("data","derived_data", "outputs_for_modelling", "pa_environment", paste0("SP",i,".Rdata")))
+  
+  data<-get(paste0("SP",i), env = new.env())
+
+data <- data %>% 
+  dplyr::filter (status==1) %>% 
+  dplyr::select(lat, lon, depth) %>% 
+  dplyr::rename (decimalLongitude =lon, 
+                 decimalLatitude = lat, 
+                 depth = depth)
+head(data)
+
+trainingRegion <- marineBackground(data, 
+                                   #buff = 1000000, 
+                                   clipToOcean = T)
+
+plot(trainingRegion, border = F, col = "gray",
+     main = paste0("Species specific training region_SP", i) ,
+     axes = T)
+plot(land, col = "black", add = T)
+points(data[,c("decimalLongitude", "decimalLatitude")], 
+       pch = 20, col = "red", cex = 1.5)
+
+trainingRegion.sf <- st_as_sf(trainingRegion)
+
+# remove the black sea
+trainingRegion_no_black_sea <- st_difference(trainingRegion.sf,Black_Sea.sf) %>% 
+  dplyr::select (F_AREA)
+
+plot(trainingRegion_no_black_sea)
+
+ # give again the proper name
+  assign(paste0("trainingRegion_SP",i), trainingRegion_no_black_sea)
+  
+  # save files after removing outliers
+  save (list=paste0("trainingRegion_SP",i), file = here::here ("data", "derived_data", "outputs_for_modelling", "training_regions", paste0("trainingRegions_SP",i, ".RData")))
+}
+```
+

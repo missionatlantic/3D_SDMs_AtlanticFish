@@ -1,0 +1,95 @@
+---
+title: "01_create_pseudoabsences_Atlantic"
+author: "Eduardo Ramirez-Romero, Leire Ibaibarriaga & Mireia Valle"
+date: "2022-09-20"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warming = FALSE)
+```
+
+Script to create a set of pseudoabsences within the 3D grid.
+
+# Loading required libraries
+```{r}
+library(rgeos)
+library(sp)
+library(rgdal)
+library(raster)
+library(data.table)
+library(dplyr)
+library(ncdf4)
+# library(MALDIquant)
+library(gtools)
+library(here)
+library(ggplot2)
+```
+
+#Load data
+```{r}
+# Load FAO (spatial multipolygon)
+FAO<- readOGR(here::here("data", "raw_data", "FAO_AREAS", "FAO_AREAS.shp"))
+
+#Load study area
+FAO_Atl <- readOGR(here::here("data", "raw_data", "FAO_AREAS", "FAO_Atl.shp"))
+
+plot(FAO_Atl)
+
+#Load 3D Grid points
+load(here::here ("data","derived_data", "03_create_pseudoabsences", "PsA_atl.RData"))
+
+colnames(ptos.atl)[1] <- "lon"
+colnames(ptos.atl)[2] <- "lat"
+
+
+lon_all<-rep(ptos.atl$lon,47)
+lat_all<-rep(ptos.atl$lat,47)
+
+levels<-ptos.atl[,3:49]
+
+c<-data.frame()
+d<-data.frame()
+
+for (i in 1:47) {
+  c<-data.frame(levels[,i]) %>% rbind(c)
+  d<-data.frame(rep(depth[i,1],dim(levels)[1]))%>% rbind(d)
+  
+}
+
+
+colnames(c)[1] <- "mask"
+colnames(d)[1] <- "depth"
+
+
+ptos<-cbind(lon_all,lat_all,d,c)
+colnames(ptos)[1]<- "lon"
+colnames(ptos)[2]<- "lat"
+
+ptos.f<-ptos[!is.na(ptos$mask),]
+
+### Random selection
+
+set.seed(1)
+s <- sample(nrow(ptos.f),size=500000,replace=TRUE)
+ps.sp <- ptos.f[s,]
+
+summary(ps.sp)
+
+save(ps.sp,file=here::here ("data","derived_data",  "03_create_pseudoabsences","pseudo_absences_1.RData"))
+
+
+# map_pa <- ggplot() +
+#   geom_path(data = FAO_Atl, 
+#             aes(x = long, y = lat, group = group),
+#             color = 'gray', linewidth = .2) +
+#   geom_point(data=ps.sp, aes(x=lon, y=lat))+
+#   coord_map("moll")
+# 
+# plot(map_pa)
+
+```
+

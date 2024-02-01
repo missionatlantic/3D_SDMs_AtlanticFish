@@ -1,0 +1,102 @@
+---
+title: "03_create_points_over3Dgrid"
+author: "Eduardo Ramirez-Romero, Leire Ibaibarriaga & Mireia Valle"
+date: "2022-09-20"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warming = FALSE)
+```
+
+Script to create points over the whole 3D grid.
+
+# Loading required libraries
+```{r}
+library(rgeos)
+library(sp)
+library(rgdal)
+library(raster)
+library(data.table)
+library(dplyr)
+library(ncdf4)
+
+# library(MALDIquant)
+library(gtools)
+library(here)
+library(ggplot2)
+```
+
+# Load data
+```{r}
+### FAO (spatial multipolygon)
+FAO<- readOGR(here::here("data", "raw_data", "FAO_AREAS", "FAO_AREAS.shp"))
+
+#Load study area
+FAO_Atl <- readOGR(here::here("data", "raw_data", "FAO_AREAS", "FAO_Atl.shp"))
+
+plot(FAO_Atl)
+
+
+### Load 3D data
+
+temp_3d_1000 <- brick(here::here("data", "derived_data", "outputs_for_modelling","variables","temp_3d_1000.tif"))
+
+#plot(temp_3d_1000)
+
+### transform brickraster to points
+xyz <- data.frame(rasterToPoints(temp_3d_1000))
+
+#setting formats
+dat <- data.frame(cbind(xyz$x,xyz$y))
+ptos<-as.data.table(dat,keep.columnnames=TRUE)
+
+
+coordinates(ptos) <- ~ X1 + X2
+
+
+proj4string(ptos) <-proj4string(FAO)
+
+### select only those points within FAO Atlantic
+ptos.atl<-data.frame(subset(xyz , !is.na(over(ptos, FAO_Atl)[,1])))
+
+levels<-ptos.atl[,3:49]
+levels[!is.na(levels)]<-1
+
+ptos.atl<-cbind(ptos.atl$x,ptos.atl$y,levels)
+
+
+l<-data.frame(as.vector(extent(temp_3d_1000)))
+lon<-seq(l[1,1],l[2,1], 0.25)
+lat<-seq(l[3,1],l[4,1], 0.25)
+
+
+## create depth data frame
+nc_data <- nc_open(here::here("data", "raw_data", "variables", "TEMP", "woa18_decav81B0_t00_04.nc"))
+depth <- ncvar_get(nc_data, "depth")
+depth<-depth[1:47]
+depth<-data.frame(depth)
+
+####save 
+save(lon,lat,depth, ptos.atl,file= here::here ("data", "derived_data", "03_create_pseudoabsences", "PsA_atl.RData")) 
+
+
+## map points atl 
+# ptos.atl <- ptos.atl %>% 
+#   dplyr::rename (x = "ptos.atl$x") %>% 
+#   dplyr::rename (y = "ptos.atl$y")
+# 
+# ggpoints_atl <- ggplot() + 
+#   geom_polygon(data = FAO_Atl, aes(x = long, y = lat, group = group), colour = "black", fill = NA)+
+#   geom_point(data = ptos.atl, aes(x = x, y = y), size = 1, colour = "blue") +
+#   coord_sf(xlim=c(-98,68.5), ylim=c(-83,90)) +
+#   ggtitle("Points Atlantic")+ 
+#   theme(plot.title = element_text(size=12))+
+#   coord_map("moll")
+# 
+# plot(ggpoints_atl) 
+
+```
+
