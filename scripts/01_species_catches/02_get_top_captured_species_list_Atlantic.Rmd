@@ -62,7 +62,7 @@ head(tunas)
 fish_and_tuna_list <- unique(rbind(top_75_spp, tunas)) %>% 
   dplyr::arrange(desc(mean_alt))
 
-write.xlsx(fish_and_tuna_list, file=here::here ("data", "derived_data", "01_species_catches", "fish_and_tuna_long_list_75_Atlantic.xlsx"),append=TRUE, col.names=TRUE)
+write.xlsx(fish_and_tuna_list, file=here::here ("data", "derived_data", "01_species_catches", "fish_and_tuna_long_list_75_Atlantic_NEW.xlsx"),append=TRUE, col.names=TRUE)
 
 #we are going to open and edit this last excel file: 
 # adding SP column 
