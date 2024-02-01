@@ -1,0 +1,188 @@
+---
+title: "Cleaning_species_occurrence_data"
+author: "Mireia Valle"
+date: "22/7/2021"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+This RMarkdown reads the occurrence data we have downloaded from GBIF/OBIS and clean it by removing NAs from depth variable, removing occurrences with no recording date and those occurrences recorded before 1981. It also mutates occurrenceStatus levels given value of 1 to occurrences and 0 to absences. Then it only saves the occurrences for each species. 
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warming = FALSE)
+```
+
+### Loading required libraries
+
+```{r}
+library (here) #enable easy file referencing 
+library(dplyr) #data cleaning
+library(ggplot2) #plotting
+library(cowplot) #plotting more than one plot
+library(rgeos) #mapping
+library(sp) #mapping
+library(rgdal) #mapping
+library(maptools) #mapping
+library(plyr) #mapping
+library(dplyr)
+library(tidyverse)
+library(readxl)
+library(RColorBrewer)# plots
+```
+
+### Reading species definitive list
+
+```{r}
+species <- read.csv (here::here ("data","derived_data", "02_species_occurrences", "species_list_pa_top_63.csv"))
+head(species)
+
+species <- species %>% 
+  dplyr::select(-X)
+
+head(species)
+```
+
+### adding taxonomy to species list
+```{r}
+scientific_names<-species$SN
+
+taxonomy <- rfishbase::load_taxa() %>% 
+  filter(Species %in% scientific_names) %>%
+  collect()
+
+head (taxonomy)
+
+taxonomy <- taxonomy %>% 
+  dplyr::rename (SN = "Species") 
+
+species <-species %>% 
+  dplyr::select (SP, taxon_key, common_name, SN, mean_no_bs)
+
+species_list <- right_join(species, taxonomy, by = "SN")
+
+head(species_list)
+
+## for all our fish species the class is Actinopterygii and the superclass is Osteichthyes, so we left those column out
+
+species_list <-species_list %>% 
+  dplyr::select (-Class, -SuperClass)
+
+write.csv (species_list, file= here::here ("data","derived_data", "02_species_occurrences", "species_list_pa_top_taxonomy_63.csv"))
+```
+
+### Loop for cleaning species occurrence data and saving only occurrences
+```{r}
+
+filenames_sp<-species_list$SP
+
+n <- str_remove(filenames_sp, "SP")
+n <- str_remove(n, ".RData")
+n <- as.numeric (n)
+
+for (i in n){
+  
+  ###load SP data
+  dat <-  load(here::here ("data", "derived_data", "02_species_occurrences", "00_fish_and_tuna_long_list_75", paste0("SP",i,".Rdata")))
+    sp<-get(paste0("SP",i), env = new.env())
+     
+  #### give date format to eventDate and fill out month and date_year columns
+  sp$eventDate <- as.Date(sp$eventDate)
+  sp[, "date_year"] <- format(sp[,"eventDate"], "%Y")
+  sp$date_year <- as.numeric(sp$date_year)
+  sp[, "month"] <- format(sp[,"eventDate"], "%m")
+  sp$month <- as.numeric(sp$month)
+
+  ### removing occurrences with no data about collection date and keeping only those records collected after  1980 because the climatology that we are going to use for the models is from 1981 to 2010
+  sp <-filter(sp, ! is.na(date_year) & date_year>1980)
+  
+  #### removing occurrences with NA value in Depth column
+  sp <- subset(sp, !depth < 0)
+  
+  ### mutate occurrenceStatus column giving value of 1 to presences and 0 to absences
+  sp <- sp %>% 
+    mutate(occurrenceStatus = ifelse(occurrenceStatus== "absent", 0, occurrenceStatus)) %>%
+    mutate(occurrenceStatus = ifelse(occurrenceStatus== "Absent", 0, occurrenceStatus)) %>% 
+    mutate(occurrenceStatus = ifelse(occurrenceStatus== "A", 0, occurrenceStatus)) %>% 
+    mutate(occurrenceStatus = ifelse(occurrenceStatus== "NA", NA, occurrenceStatus)) %>%
+    mutate(occurrenceStatus = ifelse(occurrenceStatus== "Present", 1, occurrenceStatus)) %>% 
+    mutate(occurrenceStatus = ifelse(occurrenceStatus== "present", 1, occurrenceStatus)) %>% 
+    mutate(occurrenceStatus = ifelse(occurrenceStatus== "Presente", 1, occurrenceStatus)) %>% 
+    mutate(occurrenceStatus = ifelse(occurrenceStatus== "Presence", 1, occurrenceStatus)) %>% 
+    mutate(occurrenceStatus = ifelse(occurrenceStatus== "P", 1, occurrenceStatus)) %>% 
+    mutate(occurrenceStatus = ifelse(occurrenceStatus== "Q", 1, occurrenceStatus))
+
+  ### Replace NA values from occurrenceStatus column with 1 values
+  sp$occurrenceStatus<- as.numeric(sp$occurrenceStatus)
+  
+  sp <- sp  %>% 
+    mutate(occurrenceStatus = tidyr::replace_na(occurrenceStatus,1)) 
+    #### transform occurrenceStatus to factor
+  #sp <- transform(sp, occurrenceStatus = as.factor(occurrenceStatus))
+
+  #### adding a column with depth changed to negative values
+  sp <- sp %>% 
+    mutate(negative_depth = -(depth)) 
+
+  #### filtering occurrences = 1
+  sp <- sp %>% 
+    filter(occurrenceStatus== 1)
+  
+    # give again the proper name
+  assign(paste0("SP",i), sp)
+  
+  # save files after removing outliers
+  save (list=paste0("SP",i), file = here::here ("data", "derived_data", "02_species_occurrences", "01_species_occurrences_clean_63", paste0("SP",i, ".RData")))
+  
+}
+
+```
+
+# reading occurrence number
+
+```{r}
+
+numf<-matrix(data=NA,nrow=length(filenames_sp),ncol=1)
+filenames_sp2<-data.frame()
+
+###Loop
+for (i in n) {
+  
+  
+   ###Load data
+    dat <-  load(here::here ("data", "derived_data", "02_species_occurrences", "01_species_occurrences_clean_63", paste0("SP",i,".Rdata")))
+    a<-get(paste0("SP",i), env = new.env())
+  
+   ###Pongo SP con dos cifras incluido 0###
+   filenames_sp2[i,1]<-paste0("SP",formatC(i, width=2, 
+                                           #flag="0"
+                                           ),sep="")
+   
+   ###Filtros
+   a<-filter(a, ! is.na(date_year) & date_year>1980)
+   
+   ###Numero observaciones
+   numf[i]<-nrow(a)
+   
+}
+
+# save summary of the occurrences and absences
+resumen_occ<-data.frame(cbind(filenames_sp2,numf))
+
+resumen_occ<- resumen_occ %>% 
+   dplyr::rename(SP = V1) 
+
+#remove space
+resumen_occ$SP <- gsub('\\s+', '', resumen_occ$SP)
+
+head(resumen_occ)
+
+#join tables
+species_list_clean_occ <- inner_join(species_list, resumen_occ, by = "SP")
+
+##save table
+
+write.csv (species_list_clean_occ, file= here::here ("data","derived_data", "02_species_occurrences", "species_list_clean_occ_63.csv"))
+
+```
+

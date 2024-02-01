@@ -1,0 +1,141 @@
+---
+title: "00_get_species_data_obis_gbif"
+author: "Guillem Chust, Eduardo Ramirez-Romero, Leire Ibaibarriaga, Mireia Valle"
+date: "2021-06-01"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warming = FALSE)
+```
+
+Script to download species distribution data from GBIF/OBIS.
+
+### Loading required libraries
+
+```{r}
+# Libraries for Spatial data 
+library(rgeos)
+library(sp)
+library(rgdal)
+library(ggplot2)
+library(maptools)
+library(plyr)
+library(tidyverse)
+
+# Libraries for reading data
+library(readxl)
+library(data.table)
+library(dplyr)
+
+# Specific libraries to get the occurrence data
+#install.packages("robis") # https://cran.r-project.org/web/packages/robis/robis.pdf
+library(robis)
+library (rgbif)
+#library(rfishbase)
+
+# Library for reproducible workflow
+library(here)
+
+# Library to get various R Programming Tools
+library(gtools)
+```
+
+
+```{r}
+# Reading species list fish_and_tuna_long_list_75.xlsx that has been edited: adding SP column name to the first column and renaming Scomber japonicus to Scomber colias.
+
+species <- read_excel (here::here ("data", "derived_data", "01_species_catches", "fish_and_tuna_long_list_75_Atlantic.xlsx"))
+head(species)
+
+#select and rename columns
+species_clean <- species %>% 
+  dplyr::select (SP, Taxonkey, CommonName, validated_names, mean_no_bs)%>% 
+  dplyr::rename (taxon_key = "Taxonkey", 
+          common_name = "CommonName",
+          SN = "validated_names")
+
+#Load study area
+FAO_Atl <- readOGR(here::here("data", "raw_data", "FAO_AREAS", "FAO_Atl.shp"))
+
+plot(FAO_Atl)
+```
+
+# Loop for getting the species occurrence data
+```{r}
+# Two species are giving error while downloading the data: SP55 and SP63, 
+#so we need to change the value 1 for 56 and for 64 when we get the error and run the script again
+
+for (i in 1:nrow(species_clean)) {
+  
+  ##Find the scienfic name in OBIS/GBIF
+  mydata.obis.r<-robis::occurrence(scientificname=species_clean$SN[i],absence="include")
+
+  mydata.gbif.r<-occ_data(scientificName=species_clean$SN[i], hasCoordinate = TRUE, limit=100000)$data
+
+
+  ##select variables and name them with the same name
+  mydata.obis <- mydata.obis.r %>% 
+    dplyr::select(c("scientificName", "decimalLongitude", "decimalLatitude","date_year","month","day","eventDate",
+                   "depth","dataset_id", "bathymetry","occurrenceStatus","sst"))
+
+  
+  mydata.gbif <- mydata.gbif.r %>% 
+    dplyr::select(c("scientificName", "decimalLongitude", "decimalLatitude","year","month","day","eventDate","depth", "datasetKey"))
+  
+  mydata.obis <-mydata.obis %>% 
+    mutate(source = paste0("obis.org"))
+
+  ##Arrange GBIF to the same columns number in orde to join both tables
+  gbif.bathymetry<-matrix(data=NA,nrow=dim(mydata.gbif)[1],ncol=1)
+  gbif.occurrenceStatus<-matrix(data=NA,nrow=dim(mydata.gbif)[1],ncol=1)
+  gbif.sst<-matrix(data=NA,nrow=dim(mydata.gbif)[1],ncol=1)
+  mydata.gbif<-cbind(mydata.gbif,gbif.bathymetry,gbif.occurrenceStatus,gbif.sst)
+  
+  names(mydata.gbif)<-c("scientificName", "decimalLongitude", "decimalLatitude","date_year","month","day","eventDate",                        "depth","dataset_id", "bathymetry","occurrenceStatus","sst")
+  
+    mydata.gbif <- mydata.gbif %>% 
+    mutate(source = paste0("gbif.org"))
+  
+  ##Join OBIS and GBIF getting rid of duplicates by coordinates and dates
+  mydata.fus<-rbind(mydata.obis, mydata.gbif)
+  
+  mydata.fus <- mydata.fus %>% 
+    dplyr::rename(datasetKey = "dataset_id")
+  
+    ##Change date format
+  mydata.fus$eventDate<-as.Date(mydata.fus$eventDate,format = "%Y-%m-%d")
+  
+  dat <- (cbind(mydata.fus$decimalLongitude,mydata.fus$decimalLatitude,mydata.fus$eventDate))
+  
+  mydata.fus<-mydata.fus[!duplicated(dat),]
+  
+  ##Prepare coordinate format and projection to be able to use FAO zone masks
+  dat <- data.frame(cbind(mydata.fus$decimalLongitude,mydata.fus$decimalLatitude))
+  ptos<-as.data.table(dat,keep.columnnames=TRUE)
+  
+  coordinates(ptos) <- ~ X1 + X2
+  
+  proj4string(ptos) <-proj4string(FAO_Atl)
+  
+  ##Select only occurrences from FAO Atlantic
+  match2<-data.frame(subset(mydata.fus , !is.na(over(ptos, FAO_Atl)[,1])))
+  
+  ##Extract the FAO area of each point
+  match3<-data.frame(subset(over(ptos, FAO_Atl), !is.na(over(ptos, FAO_Atl)[,1])))
+  data_fus<-cbind(F_AREA=match3$F_AREA,match2)
+  
+
+  # give again the proper name
+  assign(paste0("SP",i), data_fus)
+  
+  # save files after removing outliers
+  save (list=paste0("SP",i), file = here::here ("data", "derived_data", "02_species_occurrences", "00_fish_and_tuna_long_list_75", paste0("SP",i, ".RData")))
+
+
+}
+
+```
+

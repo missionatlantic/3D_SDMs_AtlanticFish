@@ -1,0 +1,109 @@
+---
+title: "01_read_species_data"
+author: "Guillem Chust, Eduardo Ramirez-Romero, Leire Ibaibarriaga, Mireia Valle"
+date: "2021-06-01"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warming = FALSE)
+```
+
+Script to read the saved RData for each species and create a new table with number of occurrences. 
+
+### Loading required libraries
+```{r}
+library(stringr)
+library("xlsx")
+library (dplyr)
+library(tidyverse)
+library(readxl)
+```
+
+# read the RData 
+```{r}
+
+filenames_sp <- list.files(here::here ("data", "derived_data", "02_species_occurrences", "00_fish_and_tuna_long_list_75"), pattern="SP")
+
+numf<-matrix(data=NA,nrow=length(filenames_sp),ncol=1)
+num_abs_f<-matrix(data=NA,nrow=length(filenames_sp),ncol=1)
+
+filenames_sp2<-data.frame()
+
+n <- str_remove(filenames_sp, "SP")
+n <- str_remove(n, ".RData")
+n <- as.numeric (n)
+
+###Loop FISH-SP
+for (i in n) {
+  
+  
+   ###read and load
+   dat <-  load(here::here ("data", "derived_data", "02_species_occurrences", "00_fish_and_tuna_long_list_75", paste0("SP",i,".Rdata")))
+    a<-get(paste0("SP",i), env = new.env())
+   
+   ###add SP###
+   filenames_sp2[i,1]<-paste0("SP",formatC(i, width=2, 
+                                           #flag="0"
+                                           ),sep="")
+   
+   ###filter observations considering those reported after 1980
+   a<-filter(a, ! is.na(date_year) & date_year>1980)
+   
+   ###number of occurrences
+   numf[i]<-nrow(a)
+   
+   ##Number of absences
+  
+   ab<-subset(a,(a$occurrenceStatus=="absent" | a$occurrenceStatus=="Absent"))
+   num_abs_f[i]<-nrow(ab)
+                        
+}
+
+# save summary of the occurrences and absences
+resumen_f<-data.frame(cbind(filenames_sp2,numf,num_abs_f))
+
+resumen_f<- resumen_f %>% 
+   dplyr::rename(SP = V1) 
+
+#remove space
+resumen_f$SP <- gsub('\\s+', '', resumen_f$SP)
+
+## adding species name 
+
+# Reading species list fish_and_tuna_long_list_75.xlsx that has been edited: adding SP column and renaming scomber japonicus to scomber colias.
+
+species <- read_excel (here::here ("data", "derived_data","01_species_catches", "fish_and_tuna_long_list_75_Atlantic.xlsx"))
+head(species)
+
+#select and rename columns
+
+species_clean <- species %>% 
+   dplyr::select (SP, Taxonkey, CommonName, validated_names, mean_no_bs)%>% 
+   dplyr::rename (taxon_key = "Taxonkey", 
+                  common_name = "CommonName",
+                  SN = "validated_names")
+
+# Add SP string to SP column values
+species_clean$SP <- sub("^", "SP", species_clean$SP )
+
+head(species_clean)
+head(resumen_f)
+
+#join tables
+species_list_pa <- inner_join(species_clean, resumen_f, by = "SP")
+
+## order data by mean catches value and number of occurrences
+
+species_list_pa_top <- species_list_pa %>% 
+   dplyr::arrange(desc(mean_no_bs)) %>% 
+   dplyr::filter(numf > 300)
+
+##save the table
+
+write.csv (species_list_pa_top, file= here::here ("data","derived_data", "02_species_occurrences", "species_list_pa_top_63.csv"))
+
+```
+
