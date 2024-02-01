@@ -65,11 +65,8 @@ Loop to load each species pseudoansences and extract the environmental data to t
 
 for(i in n ){
 
-#load species occurrence data
-#load(here::here("data","derived_data", "02_species_occurrences", "03_species_occurrences_aggregated", paste0("SP",i,".Rdata")))
-  
-    #Load species occurrences from Valle et al 2024 in order to get the same outputs 
-  load(here::here("data","derived_data", "outputs_for_modelling", "pa_environment", paste0("SP",i,".Rdata")))
+  #Load species occurrences aggregated provided in the repository
+  load(here::here("data","derived_data", "02_species_occurrences", "03_species_occurrences_aggregated", paste0("SP",i,".Rdata")))
 
 data<-get(paste0("SP",i), env = new.env())  
 
@@ -77,12 +74,8 @@ data <- data %>%
   dplyr::filter (status == 1)
   
 #calculate the number of occurrences of each species
-size <- nrow(data)+2000
+size <- nrow(data)
 
-#in case you are not using the data from Valle et al 2024, then you keep the same size as the size of your aggregated occurrences. 
-
-#size <- nrow(data) 
-  
 #Load 3D Grid points
 load(here::here ("data", "derived_data", "03_create_pseudoabsences", "by_species", paste0("PsA_atl_SP", i, ".RData")))
 
