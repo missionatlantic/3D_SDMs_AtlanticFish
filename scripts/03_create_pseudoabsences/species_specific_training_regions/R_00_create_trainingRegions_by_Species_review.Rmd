@@ -76,12 +76,9 @@ Loop to create training regions for each species. marineBackground function: If 
 ```{r}
 for(i in n ){
   
-  #Load species occurrences aggregated
- # load(here::here("data","derived_data", "02_species_occurrences", "03_species_occurrences_aggregated", paste0("SP",i,".Rdata")))
+  #Load species occurrences aggregated provided in the repository
+  load(here::here("data","derived_data", "02_species_occurrences", "03_species_occurrences_aggregated", paste0("SP",i,".Rdata")))
    
-  #Load species occurrences from Valle et al 2024 in order to get the same outputs 
-  load(here::here("data","derived_data", "outputs_for_modelling", "pa_environment", paste0("SP",i,".Rdata")))
-  
   data<-get(paste0("SP",i), env = new.env())
 
 data <- data %>% 
