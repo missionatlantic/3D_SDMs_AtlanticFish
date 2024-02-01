@@ -1,0 +1,183 @@
+---
+title: "01_presence_pseudoabsence_fusion by species over the species-specific training regions"
+author: "Mireia Valle based on the code used to make the fusion using the entire Atlantic pseudoabsence dataset"
+date: "2023-09-20"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+#Script info
+
+Script to join presence and pseudoabsence data generated over the species-specific training regions
+
+#Load libraries
+```{r}
+library(stringr)
+library("xlsx")
+library (dplyr)
+library(readxl)
+library(ggplot2)
+library(here) #enable easy file referencing 
+library(dplyr) #data cleaning
+library(ggplot2) #plotting
+library(cowplot) #plotting more than one plot
+library(rgeos) #mapping
+library(sp) #mapping
+library(rgdal) #mapping
+library(maptools) #mapping
+library(maps)        # some basic country maps
+library(mapdata)     # higher resolution maps
+library(marmap)      # access global topography data
+library(plyr) #mapping
+library(dplyr)
+library(tidyverse)
+library(readxl)
+library(RColorBrewer)# plots
+library(ggpointdensity)
+library(gridExtra)
+
+```
+
+
+# Basic map for plotting
+```{r}
+# basic map data
+
+global <- map_data("worldHires")
+
+# get bathymetry data
+
+# basic ggplot
+
+p0 <- ggplot() +
+  # geom_contour(data=bathy.df, aes(x,y,z=z), breaks=c(-100, -200), col="grey")+
+  annotation_map(map=global, fill="grey")+
+  coord_sf(xlim=c(-90,50), ylim=c(-90,90))+
+  xlab("")+
+  ylab("")
+
+```
+
+# Load data
+```{r}
+#Load species list
+
+species <- read.csv (here::here ("data", "derived_data","outputs_for_modelling", "species_for_modelling.csv"),  sep = ",")
+
+ species <- species %>%
+   dplyr:: select (-X)
+
+
+names <- read_excel (here::here ("data", "derived_data", "01_species_catches", "fish_and_tuna_long_list_75_Atlantic.xlsx"))
+
+filenames_sp <- names$TaxonName
+
+head(names)
+
+n <- data.frame(species$SP)
+
+names(n)
+
+n <- n %>%
+   dplyr::rename (id = "species.SP")
+
+ n <- str_remove(n$id, "SP")
+
+ n <- as.numeric (n)
+```
+
+Loop for joining the presence and pseudoabsence data and ploting
+```{r}
+for(i in n ){
+ 
+    load(here::here("data", "derived_data", "04_extracted_environment", "occurrences_environment", paste0("SP",i,".Rdata")))
+  
+  dat<-get(paste0("SP",i), env = new.env())
+ 
+    occ<-dat %>%
+      dplyr::select(lon,
+                    lat,
+                    depth,
+                    sst,
+                    temp.v,
+                    sss,
+                    sal.v,
+                    nit.s,
+                    nit.v,
+                    dist_seabed.s,
+                    dist_seabed.v,
+                    mld_rel.s,
+                    mld_relative_position.v,
+                    npp.s,
+                    npp.v,
+                    status)
+ 
+    occ <- drop_na(occ)
+ 
+    #numero de presencias
+    n_occ<- nrow(occ)
+ 
+  load (here::here ("data","derived_data",  "03_create_pseudoabsences", "by_species", paste0("pseudoabsences_environmental_SP", i, ".RData")))
+    
+    
+    #new pseudoabsence matrix avoiding to consider pseudoabsences where presence has been recorder
+ 
+    pseudo<- data %>%
+      dplyr::select(lon,
+                    lat,
+                    depth,
+                    sst,
+                    temp.v,
+                    sss,
+                    sal.v,
+                    nit.s,
+                    nit.v,
+                    dist_seabed.s,
+                    dist_seabed.v,
+                    mld_rel.s,
+                    mld_relative_position.v,
+                    npp.s,
+                    npp.v,
+                    status) %>%
+      anti_join(occ,by=c("lon","lat","depth"))
+ 
+     pseudo <- drop_na(pseudo)
+
+   #Muestra aleatoria para vertical
+    set.seed(i)
+    pseudo<-pseudo %>% distinct(lon,lat, .keep_all = T)
+    sv <- sample(nrow(data.frame(pseudo$lon)),size=n_occ,replace=TRUE)
+    pseudo <- pseudo[sv,]
+ 
+    p0 +
+      geom_point(data = pseudo, aes(x = lon, y = lat, colour = factor(status)), size = 1) +
+      ggtitle(paste0("distribution data ", "SP",i, " n=",(nrow(pseudo))))
+ 
+    #Fusiono, concateno
+    pa<-rbind(occ,pseudo)
+ 
+     #abro pdf para guardar plots por especie
+    png (here::here ("product", "figures", "Training_regions_distribution_maps", paste("pa_map_",dat$SP_id,filenames_sp[i],".png")))
+ 
+    #map of occurrences
+    p1 <- p0 +
+      geom_point(data = pa, aes(x = lon, y = lat, colour = factor(status)), size = 1) +
+      ggtitle(paste0("distribution data ", dat$SP_id,": ", dat$SN ," n_occ=",(nrow(pa)/2)))
+    print(p1)
+    dev.off()
+ 
+    #give again the proper name
+ 
+  assign(dat$SP_id[i], pa)
+ 
+    #save files after removing outliers
+ 
+  save (list=dat$SP_id[i], file = here::here ("data", "derived_data", "outputs_for_modelling", "TR_pa_environment", paste0(dat$SP_id[i], ".RData")))
+ 
+  print(dat$SP_id[i])
+ 
+  }
+
+```
+
