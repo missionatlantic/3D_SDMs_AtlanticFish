@@ -1,0 +1,199 @@
+---
+title: "Models validation"
+author: "Mireia Valle. Minor revisions by L. Ibaibarriaga"
+date: "`r format(Sys.time(), '%d %B, %Y')`" # "11/2/2022"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warming = FALSE)
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file()) # to set up the root directory to the R project path. otherwise knitr uses the path of the markdown document as root directory
+```
+
+### Loading required libraries
+
+```{r}
+library(scam)
+#library(mgcv)
+library(plotmo)
+library(rgdal)
+library(ggplot2)
+library(dplyr)
+library(fields) #imageplot
+library(maps) #map world
+library(raster)
+library(RColorBrewer)#color palette
+library(tidyverse)
+library(R.utils) #loadToEnv
+
+#SDMTools - install RTools and follow: https://cran.r-project.org/bin/windows/Rtools/
+#install.packages("remotes")
+#remotes::install_version("SDMTools", "1.1-221.2")
+library(SDMTools)
+library(dismo)
+
+#plots
+library(ggplot2)
+library(ggpubr) #theme_pubclean
+library(hrbrthemes) # theme_ipsum
+```
+
+#Loading species id
+```{r}
+species <- read.csv (here::here ("data", "derived_data","outputs_for_modelling", "species_for_modelling.csv"),  sep = ",")
+
+species <- species %>% 
+  dplyr:: select (-X) 
+
+names <- read.csv (here::here ("data", "derived_data", "01_species_catches", "fish_and_tuna_long_list_75.csv"),  sep = ";")
+
+filenames_sp <- names$TaxonName
+
+n <- data.frame(species$SP)
+
+names(n)
+
+n <- n %>%
+  dplyr::rename (id = "species.SP")
+
+n <- str_remove(n$id, "SP")
+
+n <- as.numeric (n)
+
+# remove SP9 and SP22
+
+
+```
+
+
+## VALIDATION  --------------------
+# https://rpubs.com/mlibxmda/SDMPartOne
+
+Create a df to save validation results
+```{r}
+validation_summary_short <- matrix(NA, ncol = 8, nrow = 76)
+```
+
+Loop: 
+```{r}
+for (i in n){
+  print(paste0(" Working on species: SP",i))
+
+  #Load species presence and pseudoabsence data OVER THE TRAINING REGIONS
+  dat <- loadToEnv(file.path("data", "derived_data" , "outputs_for_modelling", "R_pa_environment", paste0("SP",i, ".RData")))[[paste0("SP",i)]]
+  
+  #Load scgam model BUILT WITH TRAINING REGIONS DATA
+
+  res <- loadToEnv(file.path("data", "derived_data" , "review", "original_over_TR",paste0("model_SP",i,".RData")))[[paste0("model_SP",i)]]
+  
+  scgam <- res
+  
+  v_summary <- summary(scgam)
+  
+  # isolate the formula
+  formula <- v_summary[["formula"]]
+  
+  # Predict 
+  scgam.pred <- predict(scgam, newdata=dat, type="response")
+
+  # Add the prediction to the table
+  dat$scgam.pred <- as.vector(scgam.pred)
+  head(dat)
+
+  ## Optimizing the threshold probability. Note that the NA's should be removed first
+  #mysub <- subset(dat, !is.na(status))
+  obs <- dat$status
+  predSCGAM_P <- dat$scgam.pred
+
+  # threshold optimizing by different methods: 
+  myoptim <- optim.thresh (obs, predSCGAM_P)
+  myoptim
+  
+  # select the threshold that maximizes the sum of sensitivity and specificity (Jimenez-Valverde and Lobo, 2017)
+  myThreshold <- as.numeric((myoptim[["max.sensitivity+specificity"]])) 
+  
+  # In case, the result is a range (instead of a single value), we select the mean value of the range 
+  # MIREIA TO DECIDE:
+  # myThreshold <- max (myThreshold)
+  if(length(myThreshold)>1){
+    print(paste("Note that the threshold is the mean of the range:", myThreshold))
+    myThreshold <- mean (myThreshold) 
+  } 
+  
+  # accuracy values with all observations
+  accuracy_values <- accuracy (obs, predSCGAM_P, threshold=myThreshold)
+  
+  # save results to a table
+  AUC <- accuracy_values$AUC
+  Omision <- accuracy_values$omission.rate
+  sensitivity <- accuracy_values$sensitivity
+  specificity <- accuracy_values$specificity
+  Prop.Corr <- accuracy_values$prop.correct
+  Threshold <- accuracy_values$threshold
+  
+  # add mean values to the validation summary table for species
+  validation_summary_short[i,]<-c(paste0("SP",i),
+                            filenames_sp[i],
+                            Threshold,
+                            AUC,
+                            Omision,
+                            sensitivity,
+                            specificity,
+                            Prop.Corr)
+  
+} # end of loop for i (species)
+
+
+#Formatting validation summary table and save it 
+
+
+validation_summary_short.df <- as.data.frame(validation_summary_short)
+
+validation_summary_short.df <- validation_summary_short.df %>% 
+  drop_na()
+
+names (validation_summary_short.df) <- c("SP", "SN", "Threshold", "AUC", "Omision", "sensitivity","specificity", "Prop.Corr")
+
+head(validation_summary_short.df)
+
+str(validation_summary_short.df)
+
+validation_summary_short.df$Threshold <- as.numeric(validation_summary_short.df$Threshold)
+validation_summary_short.df$AUC <- as.numeric(validation_summary_short.df$AUC)
+validation_summary_short.df$Omision <- as.numeric(validation_summary_short.df$Omision)
+validation_summary_short.df$sensitivity <- as.numeric(validation_summary_short.df$sensitivity)
+validation_summary_short.df$specificity <- as.numeric(validation_summary_short.df$specificity)
+validation_summary_short.df$Prop.Corr <- as.numeric(validation_summary_short.df$Prop.Corr)
+
+write.csv(validation_summary_short.df, file=here::here ("data", "derived_data" ,"review", "original_over_TR", "validation", "validation_summary_short.csv"), row.names=F)
+```
+
+### PLOTTING -----------------------------
+
+plotting the validation results
+```{r}
+
+validation_summary_short.df <- read.csv (here::here ("data", "derived_data" ,"review", "original_over_TR", "validation", "validation_summary_short.csv"),  sep = ",")
+
+summary(validation_summary_short.df)
+
+
+val_table <- validation_summary_short.df  %>%
+  pivot_longer(cols=Threshold:Prop.Corr, names_to="index")
+
+p <- ggplot(val_table, aes(factor(index), value)) 
+
+boxplot_val <- p + geom_boxplot() +
+  scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, by = 0.1)) +
+  theme_pubclean() +
+  theme(axis.title.y = element_text(hjust = 1, size = 14), axis.title.x = element_text( hjust = 1, size = 14))
+
+
+ggsave(filename= "boxplot_val_short.png", plot=boxplot_val, device="png",
+       path=here::here ("data", "derived_data" ,"review", "original_over_TR", "validation"), height=8, width=10, units="in", dpi=600)
+
+```
+
+

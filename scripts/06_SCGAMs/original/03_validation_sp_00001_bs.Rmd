@@ -1,0 +1,306 @@
+---
+title: "Models validation"
+author: "Mireia Valle. Minor revisions by L. Ibaibarriaga"
+date: "`r format(Sys.time(), '%d %B, %Y')`" # "11/2/2022"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warming = FALSE)
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file()) # to set up the root directory to the R project path. otherwise knitr uses the path of the markdown document as root directory
+```
+
+### Loading required libraries
+
+```{r}
+library(scam)
+#library(mgcv)
+library(plotmo)
+library(rgdal)
+library(ggplot2)
+library(dplyr)
+library(fields) #imageplot
+library(maps) #map world
+library(raster)
+library(RColorBrewer)#color palette
+library(tidyverse)
+library(R.utils) #loadToEnv
+library(readxl)
+
+#SDMTools - install RTools and follow: https://cran.r-project.org/bin/windows/Rtools/
+#install.packages("remotes")
+#remotes::install_version("SDMTools", "1.1-221.2")
+library(SDMTools)
+library(dismo)
+
+#plots
+library(ggplot2)
+library(ggpubr) #theme_pubclean
+library(hrbrthemes) # theme_ipsum
+```
+
+#Loading species id
+```{r}
+species <- read.csv (here::here ("data", "derived_data","outputs_for_modelling", "species_for_modelling.csv"),  sep = ",")
+
+species <- species %>% 
+  dplyr:: select (-X) 
+
+names <- read_excel (here::here ("data", "derived_data", "01_species_catches", "fish_and_tuna_long_list_75_Atlantic.xlsx"))
+
+filenames_sp <- names$TaxonName
+
+n <- data.frame(species$SP)
+
+names(n)
+
+n <- n %>%
+  dplyr::rename (id = "species.SP")
+
+n <- str_remove(n$id, "SP")
+
+n <- as.numeric (n)
+
+```
+
+
+## THRESHOLD SELECTION ------------------------
+
+Create a df to save myoptim threshold max sensitivity + specificity results
+```{r}
+myoptim_summary<-matrix(NA,ncol = 3, nrow = 76)
+```
+
+```{r}
+for (i in n){
+  
+  print(paste0("Working on species: SP",i))
+
+  #Load species presence and pseudoabsence data
+  dat <- loadToEnv(file.path("data", "derived_data", "outputs_for_modelling","pa_environment",paste0("SP",i,".RData")))[[paste0("SP",i)]]
+    
+  #Load scgam model
+
+  res <- loadToEnv(file.path("data", "derived_data" , "models_sp00001",paste0("model_SP",i,".RData")))[[paste0("model_SP",i)]]
+  
+  scgam <- res$smod[[length(res$smod)]]
+  
+  v_summary <- summary(scgam)
+  
+  # isolate the formula
+  formula <- v_summary[["formula"]]
+  
+  # Predict 
+  scgam.pred <- predict(scgam, newdata=dat, type="response")
+  
+  # Add the prediction to the table
+  dat$scgam.pred <- as.vector(scgam.pred)
+  head(dat)
+  
+  # Separate Presences and absences into 2 different objects
+  # Pres   <- subset(dat, status==1)
+  # Aus  <- subset(dat, status==0)
+  
+  ## Optimizing the threshold probability
+  #mysub <- subset(dat, !is.na(status))
+  obs <- dat$status
+  predSCGAM_P <- dat$scgam.pred
+  
+  # threshold optimizing
+  myoptim <- optim.thresh (obs,predSCGAM_P)
+  myoptim
+  myoptim <- as.character(myoptim$`max.sensitivity+specificity`) # it can be a single value or a range of values
+  if (length(myoptim)==2){
+    myoptim <- paste0( myoptim[1], "-",  myoptim[2])
+  }
+
+  #add mean values to the validation summary table
+  myoptim_summary[i,]<-c(paste0("SP",i),
+                          filenames_sp[i],
+                          myoptim)
+
+}
+
+
+#Formatting myoptim summary table and save it 
+
+myoptim_summary.df <- as.data.frame(myoptim_summary)
+
+myoptim_summary.df <- myoptim_summary.df %>% 
+  drop_na()
+
+names (myoptim_summary.df) <- c("SP", "SN", "max.sensitivity+specificity")
+
+head(myoptim_summary.df)
+
+str(myoptim_summary.df)
+
+write.csv(myoptim_summary.df, 
+          file=here::here ("data", "derived_data" ,"models_sp00001", "validation", "myoptim_summary.csv"), 
+          row.names=FALSE)
+```
+
+## VALIDATION  --------------------
+# https://rpubs.com/mlibxmda/SDMPartOne
+
+Create a df to save validation results
+```{r}
+validation_summary <- matrix(NA, ncol = 8, nrow = 76)
+```
+
+Loop: 
+```{r}
+for (i in n){
+  print(paste0(" Working on species: SP",i))
+
+  #Load species presence and pseudoabsence data
+  dat <- loadToEnv(file.path("data", "derived_data", "outputs_for_modelling","pa_environment",paste0("SP",i,".RData")))[[paste0("SP",i)]]
+    
+  #Load scgam model
+
+  res <- loadToEnv(file.path("data", "derived_data" , "models_sp00001",paste0("model_SP",i,".RData")))[[paste0("model_SP",i)]]
+  
+  scgam <- res$smod[[length(res$smod)]]
+  
+  v_summary <- summary(scgam)
+  
+  # isolate the formula
+  formula <- v_summary[["formula"]]
+  
+  # Predict 
+  scgam.pred <- predict(scgam, newdata=dat, type="response")
+
+  # Add the prediction to the table
+  dat$scgam.pred <- as.vector(scgam.pred)
+  head(dat)
+
+  ## Optimizing the threshold probability. Note that the NA's should be removed first
+  #mysub <- subset(dat, !is.na(status))
+  obs <- dat$status
+  predSCGAM_P <- dat$scgam.pred
+
+  # threshold optimizing by different methods: 
+  myoptim <- optim.thresh (obs, predSCGAM_P)
+  myoptim
+  
+  # select the threshold that maximizes the sum of sensitivity and specificity (Jimenez-Valverde and Lobo, 2017)
+  myThreshold <- as.numeric((myoptim[["max.sensitivity+specificity"]])) 
+  
+  # In case, the result is a range (instead of a single value), we select the mean value of the range 
+  # myThreshold <- max (myThreshold)
+  if(length(myThreshold)>1){
+    print(paste("Note that the threshold is the mean of the range:", myThreshold))
+    myThreshold <- mean (myThreshold) 
+  } 
+  
+  # accuracy values with all observations
+  accuracy (obs, predSCGAM_P, threshold=myThreshold)
+  
+  # create confusion matrix with all observations
+  confusion.matrix(obs, predSCGAM_P, threshold=myThreshold)
+  
+  # Generating K Groups of presences for k-fold cross-validation
+  
+  # cross-validation using k-fold
+  k <- 5 # Number of groups
+  
+  # Separate Presences and absences into 2 different objects
+  Pres   <- subset(dat, status==1)
+  Aus  <- subset(dat, status==0)
+
+  # separate the presences and the absences into the k groups
+
+  groups <- kfold(Pres, k)   
+  head(groups)
+  groups2 <- kfold(Aus, k)
+  head (groups2)
+  
+  # initialise the confusion matrix and the accuracy table: 
+  myCM <- NULL 
+  myACC <- NULL
+
+  # loop for each group k
+  
+  for (j in 1:k) {
+    
+    print(paste("Results k-fold validation: group ", j))
+    
+    # Preparation of Tabla of Training Sites
+    presencias_Training <- Pres[groups != j,]
+    ausencias_Training <- Aus[groups2 != j,]
+    
+    # Join the two tables
+    puntos_Training <- rbind(presencias_Training, ausencias_Training)
+    
+    # Model fit
+    sp <- unique(scgam$sp)
+    scgam.sp.j <- scam (formula, family=binomial(link="logit"), 
+                        data=puntos_Training, sp=rep(sp,length(res$svars)))
+    summary(scgam.sp.j)
+    
+    # Predict Model
+    muestra_validacion <- Pres[groups == j,]     # valores de predict donde las observaciones son presencias
+    muestra2_validacion <- Aus [groups2 == j,]   # valores de predict donde las observaciones son ausencias
+    puntos_validacion<-rbind(muestra_validacion, muestra2_validacion)
+    
+    scgam.sp.j.pred <- predict(scgam.sp.j, newdata=puntos_validacion, type="response")
+    puntos_validacion$Pred <- scgam.sp.j.pred
+    
+    # Confussion matrix and accuracy table for fold j
+    obs <- puntos_validacion$status
+    predSCGAM <- puntos_validacion$Pred
+    # print(confusion.matrix(obs, predSCGAM, threshold=myThreshold))
+    # print(accuracy(obs, predSCGAM, threshold=myThreshold))
+    myCM <- rbind(myCM, as.numeric(confusion.matrix(obs, predSCGAM, threshold=myThreshold))) # columns are: obs0pred0, obs0pred1, obs1pred0, obs1pred1
+    myACC <- rbind(myACC, accuracy(obs, predSCGAM, threshold=myThreshold))
+  } # end of loop for j
+  
+  # save threshold
+  Threshold <- myThreshold
+  
+  # Mean values across k-folds
+  mean_AUC <- mean(myACC$AUC)
+  mean_Omision <- mean(myACC$omission.rate)
+  mean_sensitivity <- mean(myACC$sensitivity)
+  mean_specificity <- mean(myACC$specificity)
+  mean_Prop.Corr <- mean(myACC$prop.correct)  
+  
+  # add mean values to the validation summary table for species
+  validation_summary[i,]<-c(paste0("SP",i),
+                            filenames_sp[i],
+                            Threshold,
+                            mean_AUC,
+                            mean_Omision,
+                            mean_sensitivity,
+                            mean_specificity,
+                            mean_Prop.Corr)
+  
+} # end of loop for i (species)
+
+
+#Formatting validation summary table and save it 
+
+validation_summary.df <- as.data.frame(validation_summary)
+
+validation_summary.df <- validation_summary.df %>% 
+  drop_na()
+
+names (validation_summary.df) <- c("SP", "SN", "Threshold", "mean_AUC", "mean_Omision", "mean_sensitivity","mean_specificity", "mean_Prop.Corr")
+
+head(validation_summary.df)
+
+str(validation_summary.df)
+
+validation_summary.df$Threshold <- as.numeric(validation_summary.df$Threshold)
+validation_summary.df$mean_AUC <- as.numeric(validation_summary.df$mean_AUC)
+validation_summary.df$mean_Omision <- as.numeric(validation_summary.df$mean_Omision)
+validation_summary.df$mean_sensitivity <- as.numeric(validation_summary.df$mean_sensitivity)
+validation_summary.df$mean_specificity <- as.numeric(validation_summary.df$mean_specificity)
+validation_summary.df$mean_Prop.Corr <- as.numeric(validation_summary.df$mean_Prop.Corr)
+
+write.csv(validation_summary.df, file=here::here ("data", "derived_data" ,"models_sp00001", "validation", "validation_summary.csv"), row.names=F)
+```
+
+
