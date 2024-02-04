@@ -1,0 +1,96 @@
+---
+title: "HSM_sets by SP"
+author: "Mireia Valle"
+date: "7/2/2022"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warming = FALSE)
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file()) # to set up the root directory to the R project path. otherwise knitr uses the path of the markdown document as root directory
+```
+
+### Script information
+
+With this script we generate a brick with all the predicted depth layers. 
+
+Project: IM-20-MISSION
+
+
+```{r}
+library(tidyverse)
+library(gtools)
+library(raster)
+library(rgdal)
+library(purrr)
+library(readxl)
+```
+
+#Loading species id
+```{r}
+species <- read.csv (here::here ("data", "derived_data","outputs_for_modelling", "species_for_modelling.csv"),  sep = ",")
+
+species <- species %>% 
+  dplyr:: select ( -X) 
+
+names <- read_excel (here::here ("data", "derived_data", "01_species_catches", "fish_and_tuna_long_list_75_Atlantic.xlsx"))
+
+filenames_sp <- names$TaxonName
+
+
+head(names)
+
+n <- data.frame(species$SP)
+
+names(n)
+
+n <- n %>% 
+  dplyr::rename (id = "species.SP")
+
+n <- str_remove(n$id, "SP")
+
+n <- as.numeric (n)
+
+```
+
+Loading depth levels
+
+```{r}
+load(here::here ("data", "raw_data", "variables", "DEPTH", "depth.RData"))
+
+d <- as.numeric (depth)
+
+```
+
+```{r}
+
+for (i in n) {
+  
+  #read the list of rasters maps for each species (47 maps/species)
+  
+  #interset HSM_SP_i and ending in .tif  
+  maps_list <-  intersect(
+                  list.files(path=here::here("data", "derived_data", "models_sp00001", "rasters"), pattern=paste0("HSM_SP",i, "_"), all.files=TRUE, full.names=TRUE),
+                  list.files(path=here::here("data", "derived_data", "models_sp00001", "rasters"), pattern = "\\.tif$", all.files=TRUE, full.names=TRUE))
+    
+  #order the list 
+  maps_list_ordered <- mixedsort(maps_list)
+  
+  #read as raster  
+  maps <- lapply(maps_list_ordered, brick)
+  
+  #stack them 
+  SP_HSM_set <- stack(maps)
+  
+  #save brick
+  writeRaster(SP_HSM_set,
+            filename=here::here ("data", "derived_data", "models_sp00001", "rasters_set_by_species", "bricks", paste0("HSM_brick_SP",i)),
+            format="GTiff",
+            overwrite=TRUE,
+            options=c("INTERLEAVE=BAND","COMPRESS=LZW"))
+  
+  }
+```
+

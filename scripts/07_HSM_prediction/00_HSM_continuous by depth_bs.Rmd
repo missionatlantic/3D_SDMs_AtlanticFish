@@ -1,0 +1,131 @@
+---
+title: "HSM continuos raster predictions by depth"
+author: "Mireia Valle"
+date: "08/06/2022"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warming = FALSE)
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file()) # to set up the root directory to the R project path. otherwise knitr uses the path of the markdown document as root directory
+```
+
+### Script information
+
+With this script we project scam models to current conditions
+
+Project: IM-20-MISSION
+
+### Loading required libraries
+
+```{r}
+library(scam)
+#library(mgcv)
+library(plotmo)
+library(rgdal)
+library(ggplot2)
+library(dplyr)
+library(fields) #imageplot
+library(maps) #map world
+library(raster)
+library(RColorBrewer)#color palette
+library(tidyverse)
+library(readxl)
+
+#SDMTools - install RTools and follow: https://cran.r-project.org/bin/windows/Rtools/
+#install.packages("remotes")
+#remotes::install_version("SDMTools", "1.1-221.2")
+library(SDMTools)
+library(dismo)
+library(R.utils) #loadToEnv
+```
+
+#Loading species id
+```{r}
+species <- read.csv (here::here ("data", "derived_data","outputs_for_modelling", "species_for_modelling.csv"),  sep = ",")
+
+species <- species %>% 
+  dplyr:: select ( -X) 
+
+names <- read_excel (here::here ("data", "derived_data", "01_species_catches", "fish_and_tuna_long_list_75_Atlantic.xlsx"))
+
+filenames_sp <- names$TaxonName
+
+
+head(names)
+
+n <- data.frame(species$SP)
+
+names(n)
+
+n <- n %>% 
+  dplyr::rename (id = "species.SP")
+
+n <- str_remove(n$id, "SP")
+
+n <- as.numeric (n)
+
+```
+
+### Projection
+
+```{r}
+load(here::here ("data", "raw_data", "variables", "DEPTH", "depth.RData"))
+
+d <- as.numeric (depth)
+
+```
+
+
+```{r}
+for (i in n) {
+  
+  for (j in d){
+
+depth_set <- brick(here::here ("data", "derived_data","outputs_for_modelling", "depth_sets", paste0("set_",j, "_m.tif")))
+
+#### Transforming from stack to table
+
+v_table <- as.data.frame(depth_set, xy=TRUE)
+
+
+#names
+
+names (v_table) <- c("x", 
+                        "y", 
+                         "temp.v", 
+                         "sal.v",
+                         "nit.v",
+                         "do.v", 
+                         "dist_seabed.v", 
+                         "mld_relative_position.v", 
+                         "npp.v")
+
+res <- loadToEnv(file.path("data", "derived_data" , "models_sp00001",paste0("model_SP",i,".RData")))[[paste0("model_SP",i)]]
+
+scgam <- res$smod[[length(res$smod)]]
+
+# predicting 
+
+predict <- predict(scgam,newdata=v_table,type ="response",se.fit=T)            
+
+probabilities_predict<-cbind(v_table,predict)
+
+summary(probabilities_predict)
+
+ probabilities_predict.r <- probabilities_predict %>%
+    dplyr::select (x, y, fit) %>%
+   rasterFromXYZ()
+
+writeRaster(probabilities_predict.r,
+            filename = here::here ("data","derived_data", "models_sp00001", "rasters", paste0("HSM_SP",i, "_",j, "_m.tif"), sep=""),
+           format="GTiff",
+           overwrite=TRUE,
+            options=c("INTERLEAVE=BAND","COMPRESS=LZW"))
+  }
+}
+
+```
+
