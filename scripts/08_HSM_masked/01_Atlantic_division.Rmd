@@ -1,0 +1,316 @@
+---
+title: "Assign_Atlantic_division"
+author: "M Valle"
+date: "25/5/2022"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warming = FALSE)
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file()) # to set up the root directory to the R project path. otherwise knitr uses the path of the markdown document as root directory
+```
+
+#Script information
+
+With this script we assign a Atlantic division to each species that will be used to mask the prediction maps. Assignment is based on Watson catches and OBIS-GBIF occurrence distribution. 
+
+Loading libraries
+```{r}
+#spatial data
+library(data.table)
+library(sp)
+library(sf)
+library(rgdal)
+library(leaflet)
+library(RColorBrewer)
+library(tidyverse)
+library(readxl)
+library (dplyr)
+library(stringr)
+library (rfishbase)
+library(ggplot2)
+library(lubridate)
+library(rgeos)
+library(mapdata) #global map
+library(ggpointdensity) # geom point density
+library(gridExtra) #grid.arrange
+library(grid) #text.grob
+library(cowplot) #plot_grid
+library(ggnewscale) #new scale fill
+library(ggpubr)
+library(hrbrthemes) # theme_ipsum
+#hrbrthemes::import_roboto_condensed()
+library(here)
+```
+
+# Loading data for plotting
+```{r}
+#Loading selected species for modelling 
+
+species <- read.csv (here::here ("data", "derived_data","outputs_for_modelling", "species_for_modelling.csv"),  sep = ",")
+
+species <- species %>% 
+  dplyr:: select ( -X) 
+
+names <- read_excel (here::here ("data", "derived_data", "01_species_catches", "fish_and_tuna_long_list_75_Atlantic.xlsx"))
+
+filenames_sp <- names$TaxonName
+
+
+head(names)
+
+n <- data.frame(species$SP)
+
+names(n)
+
+n <- n %>% 
+  dplyr::rename (id = "species.SP")
+
+n <- str_remove(n$id, "SP")
+
+n <- as.numeric (n)
+```
+
+#Loading catches data by cell and species
+```{r}
+
+
+total_by_cell_sps_lat_long <- read.csv(here::here("data", "derived_data", "01_species_catches", "total_catches_by_cell_sps_lat_long.csv"))
+
+#Filter catch data by selected species for modelling. 
+
+taxonkey_selected <- species$taxon_key
+
+species_catches_by_cell <- total_by_cell_sps_lat_long %>% 
+  filter (Taxonkey %in% taxonkey_selected)
+```
+
+# Loading FAO east and FAO west polygons, we have generated them
+```{r}
+#FAO east
+
+#Load FAO shapefile
+FAO_east<- readOGR(here::here("data", "raw_data", "FAO_AREAS", "FAO_Atlantic_EAST.shp"))
+
+# Ploting FAO regions
+plot(FAO_east)
+
+#FAO west
+
+#Load FAO shapefile
+FAO_west<- readOGR(here::here("data", "raw_data", "FAO_AREAS", "FAO_Atlantic_WEST.shp"))
+
+# Ploting FAO regions
+plot(FAO_west)
+
+```
+
+Create an empty df
+```{r}
+n_counts<-matrix(NA,ncol = 8, nrow = 76)
+```
+
+
+```{r}
+for (i in n){
+
+# extract cells from Watson for the sp
+cells_watson <-species_catches_by_cell %>% 
+filter (Taxonkey== names$Taxonkey[i]) 
+
+#count
+n_catches <- nrow(cells_watson)
+
+#count by hemisphere
+n_catches_north <- cells_watson %>% 
+  filter (LatCentre>0) %>% 
+  nrow()
+  
+n_catches_south <- cells_watson %>% 
+  filter (LatCentre<0)%>% 
+  nrow()
+
+#assign coordinates columns
+coordinates(cells_watson) <- ~LonCentre+LatCentre
+
+#assign projection
+proj4string(cells_watson) <- CRS("+proj=longlat +datum=WGS84")
+#plot(cells_watson)
+
+# EAST 
+#create a new point shp with the points inside FAO east polygon
+cells_watson_east <- st_intersection(st_as_sf(cells_watson), st_as_sf(FAO_east))
+
+#plot(cells_watson_east[1])
+
+#count
+n_catches_east <- nrow(cells_watson_east)
+
+
+#create a data frame from sf object keeping lon and lat and removing those columns that are not needed
+# cells_watson_east.df <- cells_watson_east %>%
+#   dplyr::mutate(lon = sf::st_coordinates(.)[,1],
+#                 lat = sf::st_coordinates(.)[,2]) %>%
+#   sf::st_set_geometry(NULL) %>%
+#   dplyr::select (Cell, lon, lat, Taxonkey, suma_cacthes, mean_catches, TaxonName, CommonName, F_AREA, OceanAreasqkm)
+# 
+# st_write(cells_watson_east.df, here::here ("results", "atl_division", paste0("cells_watson_east.df_", "SP", i, ".csv")))
+
+# WEST 
+#create a new point shp with the points inside FAO west polygon
+cells_watson_west <- st_intersection(st_as_sf(cells_watson), st_as_sf(FAO_west))
+
+#plot(cells_watson_west[1])
+
+#count
+n_catches_west <- nrow(cells_watson_west)
+
+#create a data frame from sf object keeping lon and lat and removing those columns that are not needed
+# cells_watson_west.df <- cells_watson_west %>%
+#   dplyr::mutate(lon = sf::st_coordinates(.)[,1],
+#                 lat = sf::st_coordinates(.)[,2]) %>%
+#   sf::st_set_geometry(NULL) %>%
+#   dplyr::select (Cell, lon, lat, Taxonkey, suma_cacthes, mean_catches, TaxonName, CommonName, F_AREA, OceanAreasqkm)
+# 
+# st_write(cells_watson_west.df, here::here ("results", "atl_division", paste0("cells_watson_west.df_", "SP", i, ".csv")))
+
+#Load SP data (occurrences from GBIS and OBIS )
+
+load(file.path("data", "derived_data", "02_species_occurrences", "02_species_occurrences_no_outliers_automatic", paste0("SP",i,".Rdata")))
+
+occ<-get(paste0("SP",i), env = new.env())
+  
+occ <- occ %>% 
+    mutate (SP_id = paste0("SP", i)) %>% 
+    mutate (negative_depth = -depth) %>% 
+    dplyr::rename (lat = "decimalLatitude", lon = "decimalLongitude", status = "occurrenceStatus") %>% 
+    dplyr::filter (status == 1)
+
+#count
+n_occ <- nrow(occ)
+
+
+#count by hemisphere
+n_occ_north <- occ %>% 
+  filter (lat> 0)%>% 
+  nrow()
+  
+n_occ_south <- occ %>% 
+  filter (lat<0)%>% 
+  nrow()
+
+#assign coordinates columns  
+coordinates(occ) <- ~lon+lat
+
+#assign projection
+proj4string(occ) <- CRS("+proj=longlat +datum=WGS84")
+
+#plot(occ)
+
+# EAST 
+#create a new point shp with the points inside FAO east polygon
+points_east_occ <- st_intersection(st_as_sf(occ), st_as_sf(FAO_east))
+
+#plot(points_east)
+
+#count
+n_occ_east <- nrow(points_east_occ)
+
+#create a data frame from sf object keeping lon and lat and removing those columns that are not needed
+# occ_east.df <- points_east_occ %>%
+#   dplyr::mutate(lon = sf::st_coordinates(.)[,1],
+#                 lat = sf::st_coordinates(.)[,2]) %>%
+#   sf::st_set_geometry(NULL) %>%
+#   dplyr::select (-OBJECTID, -OCEAN, -Shape_Leng, -Shape_Area, -Value)
+# 
+# st_write(occ_east.df, here::here ("results", "atl_division", paste0("occ_east.df_", "SP", i, ".csv")))
+
+# WEST 
+#create a new point shp with the points inside FAO west polygon
+points_west_occ <- st_intersection(st_as_sf(occ), st_as_sf(FAO_west))
+
+#plot(points_west)
+
+#count
+n_occ_west <- nrow(points_west_occ)
+
+#create a data frame from sf object keeping lon and lat and removing those columns that are not needed
+# occ_west.df <- points_west_occ %>%
+#   dplyr::mutate(lon = sf::st_coordinates(.)[,1],
+#                 lat = sf::st_coordinates(.)[,2]) %>%
+#   sf::st_set_geometry(NULL) %>%
+#   dplyr::select (-OBJECTID, -OCEAN, -Shape_Leng, -Shape_Area, -Value)
+# 
+# st_write(occ_west.df, here::here ("results", "atl_division", paste0("occ_west.df_", "SP", i, ".csv")))
+
+
+# CALCULTE N TOTALs, 1% of the total n and Ntotals by east, west
+
+n_total <- n_catches + n_occ
+n_total
+one_per <- n_total*1/100
+one_per
+
+n_east <- n_catches_east + n_occ_east 
+n_east
+
+n_west <- n_catches_west + n_occ_west 
+n_west
+
+n_south <- n_catches_south + n_occ_south 
+n_south
+
+n_north <- n_catches_north + n_occ_north 
+n_north
+
+
+
+  #add mean values to the validation summary table
+  n_counts[i,]<-c(paste0("SP",i),
+                  paste0(filenames_sp[i]),
+                          n_total, 
+                          one_per,
+                          n_west,
+                          n_east, 
+                          n_north,
+                          n_south)
+
+} #end of the loop
+
+n_counts_df <- as.data.frame(n_counts)
+
+n_counts_df <- n_counts_df %>% 
+  drop_na()
+
+names (n_counts_df) <- c("SP",
+                         "SN",
+                         "n_total", 
+                          "one_per",
+                          "n_west",
+                          "n_east", 
+                          "n_north",
+                          "n_south")
+
+n_counts_df_division <- n_counts_df %>% 
+  dplyr::mutate (division = case_when
+                    (
+                    (n_west>one_per) & (n_east<one_per) & (n_south>one_per) & (n_north>one_per) ~ "west",
+                    (n_west>one_per) & (n_east<one_per) & (n_south<one_per) & (n_north>one_per) ~ "north-west",
+                    (n_west<one_per) & (n_east>one_per) & (n_south<one_per) & (n_north>one_per) ~ "north-east",
+                    (n_west<one_per) & (n_east>one_per) & (n_south>one_per) & (n_north>one_per) ~ "east",   
+                    (n_west<one_per) & (n_east>one_per) & (n_south<one_per) & (n_north>one_per) ~ "north-east",                       
+                    (n_west<one_per) & (n_east>one_per) & (n_south>one_per) & (n_north<one_per) ~ "south-east",
+                    (n_west>one_per) & (n_east>one_per) & (n_south<one_per) & (n_north>one_per) ~ "north", 
+                    (n_west>one_per) & (n_east>one_per) & (n_south>one_per) & (n_north<one_per) ~ "south", 
+                    TRUE ~ "pan-atlantic"
+                    )
+          )
+
+write.csv(n_counts_df_division, 
+          file=here::here ("data", "derived_data", "Atlantic_division", "n_counts_df_division.csv"), 
+          row.names=FALSE)
+
+```
+
