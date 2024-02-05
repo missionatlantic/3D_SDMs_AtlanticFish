@@ -26,6 +26,7 @@ library(tidyverse)
 library(ggpubr)
 library(hrbrthemes) # theme_ipsum
 library(readxl)
+library(raster)
 ```
 
 # creating a vector with the depth layers value
