@@ -245,7 +245,7 @@ data.df <- HSM_brick_df
     #transform to raster
     HSM_brick_masked.r <- rasterFromXYZ(data.df)
     
-    plot(HSM_brick_masked.r)
+    #plot(HSM_brick_masked.r)
 #------------------------------------------------------------#     
 #save brick
 #------------------------------------------------------------# 
