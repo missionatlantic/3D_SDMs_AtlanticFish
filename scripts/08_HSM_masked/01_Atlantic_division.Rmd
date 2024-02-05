@@ -293,6 +293,13 @@ names (n_counts_df) <- c("SP",
                           "n_north",
                           "n_south")
 
+n_counts_df$n_total<- as.numeric(n_counts_df$n_total)
+n_counts_df$one_per<- as.numeric(n_counts_df$one_per)
+n_counts_df$n_west<- as.numeric(n_counts_df$n_west)
+n_counts_df$n_east<- as.numeric(n_counts_df$n_east)
+n_counts_df$n_north<- as.numeric(n_counts_df$n_north)
+n_counts_df$n_south<- as.numeric(n_counts_df$n_south)
+
 n_counts_df_division <- n_counts_df %>% 
   dplyr::mutate (division = case_when
                     (
@@ -300,13 +307,12 @@ n_counts_df_division <- n_counts_df %>%
                     (n_west>one_per) & (n_east<one_per) & (n_south<one_per) & (n_north>one_per) ~ "north-west",
                     (n_west<one_per) & (n_east>one_per) & (n_south<one_per) & (n_north>one_per) ~ "north-east",
                     (n_west<one_per) & (n_east>one_per) & (n_south>one_per) & (n_north>one_per) ~ "east",   
-                    (n_west<one_per) & (n_east>one_per) & (n_south<one_per) & (n_north>one_per) ~ "north-east",                       
+                    (n_west<one_per) & (n_east>one_per) & (n_south<one_per) & (n_north>one_per) ~ "north-east",     
                     (n_west<one_per) & (n_east>one_per) & (n_south>one_per) & (n_north<one_per) ~ "south-east",
-                    (n_west>one_per) & (n_east>one_per) & (n_south<one_per) & (n_north>one_per) ~ "north", 
-                    (n_west>one_per) & (n_east>one_per) & (n_south>one_per) & (n_north<one_per) ~ "south", 
+                    (n_west>one_per) & (n_east>one_per) & (n_south<one_per) & (n_north>one_per) ~ "north",
+                    (n_west>one_per) & (n_east>one_per) & (n_south>one_per) & (n_north<one_per) ~ "south",
                     TRUE ~ "pan-atlantic"
-                    )
-          )
+                    ))
 
 write.csv(n_counts_df_division, 
           file=here::here ("data", "derived_data", "Atlantic_division", "n_counts_df_division.csv"), 
