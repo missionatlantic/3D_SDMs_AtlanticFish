@@ -63,7 +63,7 @@ sum_catches_redistributed <- read.csv(here::here ("data", "derived_data", "model
 # Create a data frame with xy coordinates and another new_df that where we will paste all species catches value by cell
 ```{r}
 #load sum catches map and rename the sum catches column
-template <- raster(here::here ("data", "derived_data","models_sp00001", "rasters_set_by_species", "catches_sum_atl_div", paste0("catches_sum_SP34.tif")))
+template <- raster(here::here ("data", "derived_data","models_sp00001", "catches", "catches_sum_atl_div", paste0("catches_sum_SP34_Thunnus alalunga.tif")))
 
 template.df <- as.data.frame(template, xy=TRUE)
 
@@ -83,7 +83,7 @@ n <- c(11, 1,  2,  3,  5,  6,  8,  9, 10, 19, 21, 22, 23, 30, 31, 35, 36, 37, 38
 for (i in n) {
 
 #load sum catches map and rename the sum catches column
-sum_catches <- raster(here::here ("data", "derived_data", "models_sp00001", "rasters_set_by_species", "catches_sum_atl_div", paste0("catches_sum_SP", i, ".tif")))
+sum_catches <- raster(here::here ("data", "derived_data", "models_sp00001", "catches", "catches_sum_atl_div", paste0("catches_sum_SP",i,"_", filenames_sp[i],".tif")))
 
 sum_catches.df <- as.data.frame(sum_catches, xy=TRUE)
 

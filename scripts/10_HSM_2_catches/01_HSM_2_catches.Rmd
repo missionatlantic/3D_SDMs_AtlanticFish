@@ -551,10 +551,12 @@ data.df <- HSM_2_catches
     HSM_2_catches.r <- rasterFromXYZ(HSM_2_catches)
 
     #plot(HSM_2_catches.r)
+    
+    crs(HSM_2_catches.r) <- crs(HSM_brick)
 
     #save raster
     writeRaster(HSM_2_catches.r,
-            filename=here::here ("data", "derived_data", "models_sp00001", "rasters_set_by_species", "catches_sum_atl_div", paste0("catches_sum_SP",i)),
+            filename=here::here ("data", "derived_data", "models_sp00001", "catches", "catches_sum_atl_div", paste0("catches_sum_SP",i,"_", filenames_sp[i])),
             format="GTiff",
             overwrite=TRUE,
             options=c("INTERLEAVE=BAND","COMPRESS=LZW"))
