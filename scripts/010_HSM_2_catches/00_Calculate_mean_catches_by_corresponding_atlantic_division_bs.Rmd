@@ -1,0 +1,208 @@
+---
+title: "Assign_Atlantic_division"
+author: "M Valle"
+date: "25/5/2022"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warming = FALSE)
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file()) # to set up the root directory to the R project path. otherwise knitr uses the path of the markdown document as root directory
+```
+
+Loading required libraries
+
+```{r}
+library(sf)
+library(rgdal)
+library(stringr)
+library(tidyverse)
+library(readxl)
+```
+
+Loading needed dataframes 
+```{r}
+#Loading selected species for modelling 
+
+species <- read.csv (here::here ("data", "derived_data","outputs_for_modelling", "species_for_modelling.csv"),  sep = ",")
+
+species <- species %>% 
+  dplyr:: select ( -X) 
+
+names <- read_excel (here::here ("data", "derived_data", "01_species_catches", "fish_and_tuna_long_list_75_Atlantic.xlsx"))
+
+filenames_sp <- names$TaxonName
+
+
+head(names)
+
+n <- data.frame(species$SP)
+
+names(n)
+
+n <- n %>% 
+  dplyr::rename (id = "species.SP")
+
+n <- str_remove(n$id, "SP")
+
+n <- as.numeric (n)
+
+taxonkey_selected <- species$taxon_key
+
+#Loading catches data by cell and species
+
+total_by_cell_sps_lat_long <- read.csv(here::here("data", "derived_data", "01_species_catches", "total_catches_by_cell_sps_lat_long.csv"))
+
+#Filter catch data by selected species for modelling. 
+
+species_catches_by_cell <- total_by_cell_sps_lat_long %>% 
+  filter (Taxonkey %in% taxonkey_selected) 
+
+```
+
+# Loading FAO east and FAO west polygobs
+```{r}
+#Load FAO shapefile
+FAO_east<- readOGR(here::here("data", "raw_data", "FAO_AREAS", "FAO_Atlantic_EAST.shp"))
+
+# Ploting FAO regions
+plot(FAO_east)
+
+#FAO west
+
+#Load FAO shapefile
+FAO_west<- readOGR(here::here("data", "raw_data", "FAO_AREAS", "FAO_Atlantic_WEST.shp"))
+
+# Ploting FAO regions
+plot(FAO_west)
+```
+
+Loading atlantic division table
+
+```{r}
+n_counts_df_division <- read.csv (here::here ("data", "derived_data", "Atlantic_division", "n_counts_df_division.csv"),  sep = ",")
+```
+
+Create a df
+```{r}
+mean_catches_division <-matrix(NA,ncol = 4, nrow = 76)
+```
+
+Loop to calculate mean catches by species considering the total amount of catches in the corresponding atlantic division area of the species. 
+```{r}
+for(i in n ){
+  
+  #select the data associated to my sp
+  mySP <- n_counts_df_division %>% 
+    filter (n_counts_df_division$SP == paste0("SP", i))
+  
+  # extract cells from Watson for the sp
+  cells_watson <-species_catches_by_cell %>% 
+  filter (Taxonkey== names$Taxonkey[i]) 
+  
+
+  #assign coordinates columns  
+  coordinates(cells_watson) <- ~LonCentre+LatCentre
+
+  #assign projection
+  proj4string(cells_watson) <- CRS("+proj=longlat +datum=WGS84")
+  
+  
+  if (mySP$division=="north-east"){
+  
+  # EAST 
+#create a new point shp with the points inside FAO east polygon
+data <- st_intersection(st_as_sf(cells_watson), st_as_sf(FAO_east))
+
+#create a data frame from sf object keeping lon and lat and removing those columns that are not needed
+data.df <- data %>%
+  dplyr::mutate(lon = sf::st_coordinates(.)[,1],
+                lat = sf::st_coordinates(.)[,2]) %>%
+  sf::st_set_geometry(NULL) %>%
+  dplyr::select (-OBJECTID, -OCEAN, -Shape_Leng, -Shape_Area, -Value)
+
+data.df <- data.df %>% 
+  filter (lat> 0)
+
+mean_catches <- data.df %>%
+  group_by (Taxonkey) %>% 
+  summarize (mean = sum(mean_catches))
+    
+  }
+  
+  if (mySP$division=="north"){
+
+data.df <- species_catches_by_cell %>% 
+  filter (Taxonkey== names$Taxonkey[i]) %>% 
+  filter (LatCentre> 0)    
+
+mean_catches <- data.df %>%
+  group_by (Taxonkey) %>% 
+  summarize (mean = sum(mean_catches)) 
+
+  }
+  
+  if (mySP$division=="east"){
+    
+  # EAST 
+#create a new point shp with the points inside FAO east polygon
+data <- st_intersection(st_as_sf(cells_watson), st_as_sf(FAO_east))
+
+#create a data frame from sf object keeping lon and lat and removing those columns that are not needed
+data.df <- data %>%
+  dplyr::mutate(lon = sf::st_coordinates(.)[,1],
+                lat = sf::st_coordinates(.)[,2]) %>%
+  sf::st_set_geometry(NULL) %>%
+  dplyr::select (-OBJECTID, -OCEAN, -Shape_Leng, -Shape_Area, -Value)
+
+mean_catches <- data.df %>%
+  group_by (Taxonkey) %>% 
+  summarize (mean = sum(mean_catches))
+
+
+  #pan-atlantic
+  }
+  
+  if (mySP$division=="pan-atlantic"){
+  
+data.df <- species_catches_by_cell %>% 
+  filter (Taxonkey== names$Taxonkey[i])
+
+mean_catches <- data.df %>%
+  group_by (Taxonkey) %>% 
+  summarize (mean = sum(mean_catches))
+
+  }
+
+
+#add mean values to the summary table
+  mean_catches_division[i,]<-c(paste0("SP",i),
+                  paste0(filenames_sp[i]),
+                         mySP$division,
+                         mean_catches$mean)
+
+} #end of the loop
+
+mean_catches_division <- as.data.frame(mean_catches_division)
+
+mean_catches_division_df <- mean_catches_division %>% 
+  drop_na()
+
+names (mean_catches_division_df) <- c("SP",
+                         "SN",
+                         "division", 
+                         "mean_catches")
+
+str(mean_catches_division_df)
+
+mean_catches_division_df$mean_catches <- as.numeric(mean_catches_division_df$mean_catches)
+
+write.csv(mean_catches_division_df, 
+          file=here::here ("data","derived_data", "Atlantic_division", "mean_catches_division_df.csv"), 
+          row.names=FALSE)
+
+```
+
+

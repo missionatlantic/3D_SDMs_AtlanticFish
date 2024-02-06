@@ -1,0 +1,589 @@
+---
+title: "catches_2_probability"
+author: "M Valle"
+date: "31/5/2022"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warming = FALSE)
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file()) # to set up the root directory to the R project path. otherwise knitr uses the path of the markdown document as root directory
+```
+
+Loading libraries
+```{r}
+library(sf)
+library(rgdal)
+library(stringr)
+library(tidyverse)
+library(ggpubr)
+library(hrbrthemes) # theme_ipsum
+library(raster) #read brick
+library(prevR)#point.in.SpatialPolygons
+library(readxl)
+```
+
+# Loading division & catches, threshold and depth quantile information for the species
+
+```{r}
+mean_catches_division_df <- read.csv (here::here ("data","derived_data", "Atlantic_division", "mean_catches_division_df.csv"),  sep = ",")
+
+
+validation_summary.df <- read.csv (here::here ("data","derived_data","models_sp00001", "validation", "validation_summary.csv"),  sep = ",")
+
+max_depth_for_mean_hsm <- read.csv (here::here ("data", "derived_data", "models_sp00001", "max_depth_for_hsm_quantile.csv"),  sep = ",")
+```
+
+# creating a vector with the depth layers value
+```{r}
+load(here::here ("data", "raw_data", "variables", "DEPTH", "depth.RData"))
+
+depth <- as.numeric (depth)
+```
+
+#Loading selected species for modelling 
+```{r}
+
+species <- read.csv (here::here ("data", "derived_data","outputs_for_modelling", "species_for_modelling.csv"),  sep = ",")
+
+species <- species %>% 
+  dplyr:: select ( -X) 
+
+names <- read_excel (here::here ("data", "derived_data", "01_species_catches", "fish_and_tuna_long_list_75_Atlantic.xlsx"))
+
+filenames_sp <- names$TaxonName
+
+taxonkey_selected <- species$taxon_key
+
+n <- data.frame(species$SP)
+
+n <- n %>% 
+  dplyr::rename (id = "species.SP")
+
+n <- str_remove(n$id, "SP")
+
+n <- as.numeric (n)
+
+```
+
+# Loading FAO east and FAO west polygobs
+```{r}
+#Load FAO shapefile
+FAO_east<- readOGR(here::here("data", "raw_data", "FAO_AREAS", "FAO_Atlantic_EAST.shp"))
+
+# Ploting FAO regions
+plot(FAO_east)
+
+#FAO west
+
+#Load FAO shapefile
+FAO_west<- readOGR(here::here("data", "raw_data", "FAO_AREAS", "FAO_Atlantic_WEST.shp"))
+
+# Ploting FAO regions
+plot(FAO_west)
+```
+
+Loop to
+1) Subset hsmaps to the depth defined by the quantile 99 
+2) Filter hs to the division of the Atlantic that the species corresponds to
+3) Apply threshold to continuous hs maps
+4) Calculate HS total value considering only probabilities above the threshold and cells within the atlantic division corresponding to the species
+5) Redistribute catches based on hs total (summed up only considering those cells within the corresponding atlantic division of the species)
+6) Filter the catches to the division of the Atlantic that the species corresponds to
+7) sum up redistributed catches by depth and save them as raster
+
+Create a df
+```{r}
+sum_catches_redistributed <-matrix(NA,ncol = 4, nrow = 76)
+```
+
+
+```{r}
+for(i in n){
+  
+  print(i)
+  
+  # select the division associated to my sp
+  mySP <- mean_catches_division_df %>% 
+          filter (mean_catches_division_df$SP == paste0("SP", i))
+  
+  # select threshold value for the SP
+  mythreshold <- validation_summary.df %>% 
+          filter (validation_summary.df$SP == paste0("SP", i))
+  
+  #select depth limit 
+  myquantile <- max_depth_for_mean_hsm %>% 
+          filter (max_depth_for_mean_hsm$SP == paste0("SP", i))
+    
+  
+  #load HSM brick 
+  HSM_brick <- brick (here::here ("data", "derived_data", "models_sp00001", "rasters_set_by_species", "bricks", paste0("HSM_brick_SP",i,".tif")))
+  
+  #plot(HSM_brick)
+  
+  #### Transforming from stack to table
+  HSM_brick_df <- as.data.frame(HSM_brick, xy=TRUE)
+
+#---------------------------------------------------------------------------# #1) Subset hsmaps to the depth defined by the quantile 99 
+#---------------------------------------------------------------------------#
+  
+  # assign names
+  names (HSM_brick_df) <- c("x",
+                          "y", 
+                           "0", 
+                           "5", 
+                           "10",
+                           "15", 
+                           "20", 
+                           "25",
+                           "30", 
+                           "35", 
+                           "40", 
+                           "45", 
+                           "50", 
+                           "55",
+                           "60", 
+                           "65",  
+                           "70",
+                           "75", 
+                           "80", 
+                           "85", 
+                           "90", 
+                           "95", 
+                           "100",  
+                           "125", 
+                           "150", 
+                           "175", 
+                           "200", 
+                           "225",  
+                           "250", 
+                           "275",  
+                           "300", 
+                           "325", 
+                           "350",
+                           "375", 
+                           "400", 
+                           "425", 
+                           "450", 
+                           "475", 
+                           "500", 
+                           "550", 
+                           "600", 
+                           "650", 
+                           "700", 
+                           "750", 
+                           "800",
+                           "850", 
+                           "900", 
+                           "950",
+                           "1000")
+  
+  
+  #create a vector that includes the columns <= to the calculated quantile
+  cols_select <- as.data.frame (depth) %>% 
+    dplyr::filter (depth <= myquantile$quantile_depth)
+  
+  cols_select <- as.character(cols_select$depth)
+    
+  ## subset the HSM_brick dataframe considering calculated myquantile SUBSET BY DEPTH
+  HSM_brick_df_subset <-  HSM_brick_df %>% 
+   dplyr::select(c(x, y, all_of(cols_select)))
+ 
+#---------------------------------------------------------------------------# #2) Filter hs to the division of the Atlantic that the species corresponds to
+#---------------------------------------------------------------------------#
+
+  if (mySP$division=="north-east"){
+
+  #create sf object
+  HSM_brick_subset_sf <- HSM_brick_df_subset
+
+  #assign coordinates columns  
+  sp::coordinates(HSM_brick_subset_sf) <- ~x+y
+
+  #assign projection
+  proj4string(HSM_brick_subset_sf) <- CRS("+proj=longlat +datum=WGS84")    
+ 
+  # EAST filter
+#create a new point shp with the points inside FAO east polygon
+data <- st_intersection(st_as_sf(HSM_brick_subset_sf), st_as_sf(FAO_east))
+
+#create a data frame from sf object keeping lon and lat and removing those columns that are not needed
+data.df <- data %>%
+  dplyr::mutate(x = sf::st_coordinates(.)[,1],
+                y = sf::st_coordinates(.)[,2]) %>%
+  sf::st_set_geometry(NULL) %>%
+  dplyr::select (-OBJECTID, -OCEAN, -Shape_Leng, -Shape_Area, -Value)
+
+#NORTH filter
+data.df <- data.df %>% 
+  filter (y> 0)
+
+  }
+  
+  if (mySP$division=="north"){
+
+#NORTH Filter
+data.df <- HSM_brick_df_subset %>% 
+  filter (y> 0)
+
+  }
+  
+  if (mySP$division=="east"){
+
+  #create sf object
+  HSM_brick_subset_sf <- HSM_brick_df_subset
+
+  #assign coordinates columns  
+  sp::coordinates(HSM_brick_subset_sf) <- ~x+y
+
+  #assign projection
+  proj4string(HSM_brick_subset_sf) <- CRS("+proj=longlat +datum=WGS84")     
+        
+  # EAST filter
+#create a new point shp with the points inside FAO east polygon
+data <- st_intersection(st_as_sf(HSM_brick_subset_sf), st_as_sf(FAO_east))
+
+#create a data frame from sf object keeping lon and lat and removing those columns that are not needed
+data.df <- data %>%
+  dplyr::mutate(x = sf::st_coordinates(.)[,1],
+                y = sf::st_coordinates(.)[,2]) %>%
+  sf::st_set_geometry(NULL) %>%
+  dplyr::select (-OBJECTID, -OCEAN, -Shape_Leng, -Shape_Area, -Value)
+
+  #pan-atlantic
+  }
+  
+  if (mySP$division=="pan-atlantic"){
+  
+data.df <- HSM_brick_df_subset
+
+  }
+
+#---------------------------------------------------------------------------# #3) Apply threshold to continuous hs maps
+#---------------------------------------------------------------------------# 
+ 
+  ##assign NA value to those values < than my threshold FILTER BY THRESHOLD
+  HSM_brick_df_subset <-  data.df %>% 
+    dplyr::select (-x, -y)
+  
+  HSM_brick_df_subset[HSM_brick_df_subset<mythreshold$Threshold] <- NA
+  
+  #summary(HSM_brick_df_subset)
+
+#---------------------------------------------------------------------------#
+#4) Calculate HS total value considering only probabilities above the threshold
+#---------------------------------------------------------------------------# 
+
+  #first create a new column with the sum of all rows (considering only the selected depth levels)
+  HS_total <- HSM_brick_df_subset %>% 
+    dplyr::mutate (hsm_sum = rowSums(., na.rm =TRUE))
+  
+  #calculate the total of the created column  
+  HS_total <- sum(HS_total$hsm_sum, na.rm =TRUE)
+  
+  #HS_total
+
+#---------------------------------------------------------------------------#
+#5) Redistribute catches based on hs total (summed up only considering those cells within the corresponding Atlantic division of the species)
+#---------------------------------------------------------------------------# 
+  
+  #we select the whole data frame which contains all depth levels and rename columns adding hs_
+    # assign new names to depth level probabilities
+  names (HSM_brick_df) <- c("x",
+                          "y", 
+                           "hs_0", 
+                           "hs_5", 
+                           "hs_10",
+                           "hs_15", 
+                           "hs_20", 
+                           "hs_25",
+                           "hs_30", 
+                           "hs_35", 
+                           "hs_40", 
+                           "hs_45", 
+                           "hs_50", 
+                           "hs_55",
+                           "hs_60", 
+                           "hs_65",  
+                           "hs_70",
+                           "hs_75", 
+                           "hs_80", 
+                           "hs_85", 
+                           "hs_90", 
+                           "hs_95", 
+                           "hs_100",  
+                           "hs_125", 
+                           "hs_150", 
+                           "hs_175", 
+                           "hs_200", 
+                           "hs_225",  
+                           "hs_250", 
+                           "hs_275",  
+                           "hs_300", 
+                           "hs_325", 
+                           "hs_350",
+                           "hs_375", 
+                           "hs_400", 
+                           "hs_425", 
+                           "hs_450", 
+                           "hs_475", 
+                           "hs_500", 
+                           "hs_550", 
+                           "hs_600", 
+                           "hs_650", 
+                           "hs_700", 
+                           "hs_750", 
+                           "hs_800",
+                           "hs_850", 
+                           "hs_900", 
+                           "hs_950",
+                           "hs_1000")
+  
+  #summary(HSM_brick_df)
+  
+  #create a var named vector to assign NA values to those values below the mythreshold
+  
+                  var <- c ("hs_0",
+                            "hs_5", 
+                           "hs_10",
+                           "hs_15", 
+                           "hs_20", 
+                           "hs_25",
+                           "hs_30", 
+                           "hs_35", 
+                           "hs_40", 
+                           "hs_45", 
+                           "hs_50", 
+                           "hs_55",
+                           "hs_60", 
+                           "hs_65",  
+                           "hs_70",
+                           "hs_75", 
+                           "hs_80", 
+                           "hs_85", 
+                           "hs_90", 
+                           "hs_95", 
+                           "hs_100",  
+                           "hs_125", 
+                           "hs_150", 
+                           "hs_175", 
+                           "hs_200", 
+                           "hs_225",  
+                           "hs_250", 
+                           "hs_275",  
+                           "hs_300", 
+                           "hs_325", 
+                           "hs_350",
+                           "hs_375", 
+                           "hs_400", 
+                           "hs_425", 
+                           "hs_450", 
+                           "hs_475", 
+                           "hs_500", 
+                           "hs_550", 
+                           "hs_600", 
+                           "hs_650", 
+                           "hs_700", 
+                           "hs_750", 
+                           "hs_800",
+                           "hs_850", 
+                           "hs_900", 
+                           "hs_950",
+                           "hs_1000")
+  
+  HSM_brick_df[,var][HSM_brick_df[,var] <mythreshold$Threshold] <- NA
+  
+ #summary(HSM_brick_df)
+  
+  #create a new data frame with new columns of redistributed catches according to hs value above threshold by depth level
+    HSM_2_catches <- HSM_brick_df %>% 
+      dplyr::mutate (prob_catches_0 = (hs_0*mySP$mean_catches)/HS_total) %>% 
+      dplyr::mutate (prob_catches_5 = (hs_5*mySP$mean_catches)/HS_total) %>% 
+      dplyr::mutate (prob_catches_10= (hs_10*mySP$mean_catches)/HS_total)%>% 
+      dplyr::mutate (prob_catches_15= (hs_15*mySP$mean_catches)/HS_total)%>%  
+      dplyr::mutate (prob_catches_20= (hs_20*mySP$mean_catches)/HS_total)%>%  
+      dplyr::mutate (prob_catches_25= (hs_25*mySP$mean_catches)/HS_total)%>% 
+      dplyr::mutate (prob_catches_30= (hs_30*mySP$mean_catches)/HS_total)%>%  
+      dplyr::mutate (prob_catches_35= (hs_35*mySP$mean_catches)/HS_total)%>%  
+      dplyr::mutate (prob_catches_40= (hs_40*mySP$mean_catches)/HS_total)%>%  
+      dplyr::mutate (prob_catches_45= (hs_45*mySP$mean_catches)/HS_total)%>%  
+      dplyr::mutate (prob_catches_50= (hs_50*mySP$mean_catches)/HS_total)%>%  
+      dplyr::mutate (prob_catches_55= (hs_55*mySP$mean_catches)/HS_total)%>% 
+      dplyr::mutate (prob_catches_60= (hs_60*mySP$mean_catches)/HS_total)%>%  
+      dplyr::mutate (prob_catches_65= (hs_65*mySP$mean_catches)/HS_total)%>%   
+      dplyr::mutate (prob_catches_70= (hs_70*mySP$mean_catches)/HS_total)%>% 
+      dplyr::mutate (prob_catches_75= (hs_75*mySP$mean_catches)/HS_total)%>%  
+      dplyr::mutate (prob_catches_80= (hs_80*mySP$mean_catches)/HS_total)%>%  
+      dplyr::mutate (prob_catches_85= (hs_85*mySP$mean_catches)/HS_total)%>%  
+      dplyr::mutate (prob_catches_90= (hs_90*mySP$mean_catches)/HS_total)%>%  
+      dplyr::mutate (prob_catches_95= (hs_95*mySP$mean_catches)/HS_total)%>%  
+      dplyr::mutate (prob_catches_100= (hs_100*mySP$mean_catches)/HS_total)%>%   
+      dplyr::mutate (prob_catches_125= (hs_125*mySP$mean_catches)/HS_total)%>%  
+      dplyr::mutate (prob_catches_150= (hs_150*mySP$mean_catches)/HS_total)%>%  
+      dplyr::mutate (prob_catches_175= (hs_175*mySP$mean_catches)/HS_total)%>%  
+      dplyr::mutate (prob_catches_200= (hs_200*mySP$mean_catches)/HS_total)%>%  
+      dplyr::mutate (prob_catches_225= (hs_225*mySP$mean_catches)/HS_total)%>%   
+      dplyr::mutate (prob_catches_250= (hs_250*mySP$mean_catches)/HS_total)%>%  
+      dplyr::mutate (prob_catches_275= (hs_275*mySP$mean_catches)/HS_total)%>%   
+      dplyr::mutate (prob_catches_300= (hs_300*mySP$mean_catches)/HS_total)%>%  
+      dplyr::mutate (prob_catches_325= (hs_325*mySP$mean_catches)/HS_total)%>%  
+      dplyr::mutate (prob_catches_350= (hs_350*mySP$mean_catches)/HS_total)%>% 
+      dplyr::mutate (prob_catches_375= (hs_375*mySP$mean_catches)/HS_total)%>%  
+      dplyr::mutate (prob_catches_400= (hs_400*mySP$mean_catches)/HS_total)%>%  
+      dplyr::mutate (prob_catches_425= (hs_425*mySP$mean_catches)/HS_total)%>%  
+      dplyr::mutate (prob_catches_450= (hs_450*mySP$mean_catches)/HS_total)%>%  
+      dplyr::mutate (prob_catches_475= (hs_475*mySP$mean_catches)/HS_total)%>%  
+      dplyr::mutate (prob_catches_500= (hs_500*mySP$mean_catches)/HS_total)%>%  
+      dplyr::mutate (prob_catches_550= (hs_550*mySP$mean_catches)/HS_total)%>%  
+      dplyr::mutate (prob_catches_600= (hs_600*mySP$mean_catches)/HS_total)%>%  
+      dplyr::mutate (prob_catches_650= (hs_650*mySP$mean_catches)/HS_total)%>%  
+      dplyr::mutate (prob_catches_700= (hs_700*mySP$mean_catches)/HS_total)%>%  
+      dplyr::mutate (prob_catches_750= (hs_750*mySP$mean_catches)/HS_total)%>%  
+      dplyr::mutate (prob_catches_800= (hs_800*mySP$mean_catches)/HS_total)%>% 
+      dplyr::mutate (prob_catches_850= (hs_850*mySP$mean_catches)/HS_total)%>%  
+      dplyr::mutate (prob_catches_900= (hs_900*mySP$mean_catches)/HS_total)%>%  
+      dplyr::mutate (prob_catches_950= (hs_950*mySP$mean_catches)/HS_total)%>% 
+      dplyr::mutate (prob_catches_1000 =(hs_1000*mySP$mean_catches)/HS_total)
+  
+    
+#---------------------------------------------------------------------------##6) Filter the catches to the division of the Atlantic that the species corresponds to
+#---------------------------------------------------------------------------#
+ 
+    ## create a myvariables object containing the names of the variables
+    myvars <- HSM_2_catches %>% 
+    dplyr::select(-c(1:49))
+    
+    myvars <- names (myvars)
+    
+      
+  if (mySP$division=="north-east"){
+
+#EAST filter
+    
+#create a TRUE/FALSE object where TRUE means that the points is inside the FAO east polygon and FALSE that it is outside
+data_new <- point.in.SpatialPolygons(HSM_2_catches$x, HSM_2_catches$y, FAO_east)
+
+#add the TRUE/FALSE object to the dataframe
+data_check <- cbind (HSM_2_catches, data_new)
+
+# assign NA value to those points outside the corresponding FAO division, if data_new column says TRUE then we keep the value if it says FALSE then we assign NA
+data.df <- data_check %>% 
+  dplyr::mutate_at(.vars = myvars, funs(ifelse(data_new == TRUE, ., NA)))
+
+    
+  data.df <- data.df %>% 
+      dplyr::select (-data_new)
+
+#NORTH filter
+
+# assign NA value to those points with a lat value under 0, if y column data is > 0 then we keep the value if it < 0 then we assign NA
+data.df <- data.df %>% 
+  dplyr::mutate_at(.vars = myvars, funs(ifelse(y > 0, ., NA)))
+
+# ggplot() +
+#   geom_point(data = data.df, aes(x=x, y=y, colour = redistributed_catches_by_depth_brick_SP1.21), size = 1, alpha = 0.4)
+
+  }
+  
+  if (mySP$division=="north"){
+
+#NORTH filter
+
+# assign NA value to those points with a lat value under 0, if y column data is > 0 then we keep the value if it < 0 then we assign NA
+data.df <- HSM_2_catches %>% 
+  dplyr::mutate_at(.vars = myvars, funs(ifelse(y > 0, ., NA)))
+
+
+# ggplot() +
+#   geom_point(data = data.df, aes(x=x, y=y, colour = redistributed_catches_by_depth_brick_SP1.21), size = 1)
+
+  }
+  
+  if (mySP$division=="east"){
+
+  # EAST filter
+
+#create a TRUE/FALSE object where TRUE means that the points is inside the FAO east polygon and FALSE that it is outside
+data_new <- point.in.SpatialPolygons(HSM_2_catches$x, HSM_2_catches$y, FAO_east)
+
+#add the TRUE/FALSE object to the dataframe
+data_check <- cbind (HSM_2_catches, data_new)
+
+# assign NA value to those points outside the corresponding FAO division, if data_new column says TRUE then we keep the value if it says FALSE then we assign NA
+data.df <- data_check %>% 
+  dplyr::mutate_at(.vars = myvars, funs(ifelse(data_new == TRUE, ., NA)))
+
+    
+    data.df <- data.df %>% 
+      dplyr::select (-data_new)
+
+
+# ggplot() +
+#     geom_point(data = data.df, aes(x=x, y=y, colour = depth_0), size = 1, alpha = 0.4)
+
+  }
+  #pan-atlantic
+  if (mySP$division=="pan-atlantic"){
+  
+data.df <- HSM_2_catches
+
+  }
+    
+
+#--------------------------------------------------------------------------#
+#7) sum up redistributed catches by depth and save them as raster  
+#--------------------------------------------------------------------------#
+       
+    mylength <- length (cols_select) + 49
+    
+    #sum of catches for plotting
+    HSM_2_catches <- data.df %>%
+      dplyr::mutate (catches_sum = rowSums(.[,50:mylength], na.rm =TRUE)) %>%       dplyr::select(x, y, catches_sum)
+    
+    summary(HSM_2_catches)
+    
+  # ggplot() +
+  #     geom_point(data = HSM_2_catches, aes(x=x, y=y, colour = catches_sum), size = 1)
+    
+    # #transform to raster
+    HSM_2_catches.r <- rasterFromXYZ(HSM_2_catches)
+
+    #plot(HSM_2_catches.r)
+
+    #save raster
+    writeRaster(HSM_2_catches.r,
+            filename=here::here ("data", "derived_data", "models_sp00001", "rasters_set_by_species", "catches_sum_atl_div", paste0("catches_sum_SP",i)),
+            format="GTiff",
+            overwrite=TRUE,
+            options=c("INTERLEAVE=BAND","COMPRESS=LZW"))
+    
+    
+    #check if the sum of the catches is equal to the redistributed total of catches mySP$mean_catches. To do this we need to filter the cells according to the division of the atlantic to wich the species corresponds to:
+
+    #calculate the sum of the catches
+    redistributed <- sum(HSM_2_catches$catches_sum)
+
+
+    #check if the amount is the same
+    original <- mySP$mean_catches
+    
+    #fill in the df
+    sum_catches_redistributed[i,]<- c(paste0("SP",i),
+                                      paste0(filenames_sp[i]),
+                                      redistributed,
+                                      original)
+    
+}# end of loop
+
+sum_catches_redistributed <- as.data.frame(sum_catches_redistributed)
+
+names(sum_catches_redistributed) <- c("SP", "SN", "sum_redistributed", "original")
+
+sum_catches_redistributed <- sum_catches_redistributed %>% 
+  drop_na(SP)
+
+write.csv(sum_catches_redistributed, file=here::here ("data", "derived_data", "models_sp00001", "sum_catches_redistributed.csv"))
+```
+
