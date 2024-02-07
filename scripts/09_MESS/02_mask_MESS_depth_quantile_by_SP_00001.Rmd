@@ -1,0 +1,346 @@
+---
+title: "Filter MESS results by depth quantile"
+author: "M Valle"
+date: "08/6/2022"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warming = FALSE)
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file()) # to set up the root directory to the R project path. otherwise knitr uses the path of the markdown document as root directory
+```
+
+#Script information
+
+With this script we calculate the 0.99 quantile of the depth distribution for each species and generate bricks that contain 47 layers but from the quantile depth the values are NA. 
+
+Loading libraries
+```{r}
+library(sf)
+library(rgdal)
+library(stringr)
+library(tidyverse)
+library(ggpubr)
+library(hrbrthemes) # theme_ipsum
+library(maps)        # some basic country maps
+library(mapdata)     # higher resolution maps
+library(marmap)      # access global topography data
+library(metR) #scale_y_latitude
+```
+
+# creating a vector with the depth layers value
+```{r}
+load(here::here ("data", "raw_data", "variables", "DEPTH", "depth.RData"))
+
+d <- as.numeric (depth)
+```
+
+#Loading selected species for modelling 
+```{r}
+
+species <- read.csv (here::here ("data", "derived_data","outputs_for_modelling", "species_for_modelling.csv"),  sep = ",")
+
+species <- species %>% 
+  dplyr:: select ( -X) 
+
+names <- read_excel (here::here ("data", "derived_data", "01_species_catches", "fish_and_tuna_long_list_75_Atlantic.xlsx"))
+
+filenames_sp <- names$TaxonName
+
+head(names)
+
+n <- data.frame(species$SP)
+
+names(n)
+
+n <- n %>% 
+  dplyr::rename (id = "species.SP")
+
+n <- str_remove(n$id, "SP")
+
+n <- as.numeric (n)
+
+```
+
+# Basic map ---------------------------------------------------------------
+```{r}
+
+# basic map data
+
+global <- map_data("worldHires")
+
+```
+
+Loop by species where we calculate the depth level of the 99 quantile of the occurrences and then select the MESS from 0 to that level and we add NA values to all other layer depth and export as raster brick.
+```{r}
+for(i in n ){
+  
+  print(i)
+  
+  #calculate depth limit
+  #Load SP data
+  occ <- loadToEnv(file.path("data", "derived_data" , "outputs_for_modelling", "pa_environment", paste0("SP",i, ".RData")))[[paste0("SP",i)]]
+  
+  occ <- occ %>% 
+    dplyr::filter (status == 1) %>% 
+    dplyr::select (lon, lat, depth, status) %>% 
+    dplyr::rename (x = "lon", 
+            y = "lat")
+  
+  myquantile <- quantile(occ$depth, probs = .99)
+  
+  myquantile <- as.numeric(myquantile)
+  
+  #load MESS map 
+  MESS_brick <- brick (here::here ("data", "derived_data", "models_sp00001", "MESS", "bricks", paste0("MESS_brick_SP",i,".tif")))
+  
+  #### Transforming from stack to table
+  MESS_brick_df <- as.data.frame(MESS_brick, xy=TRUE)
+
+  # assign names
+  names (MESS_brick_df) <- c("x",
+                          "y", 
+                           "0", 
+                           "5", 
+                           "10",
+                           "15", 
+                           "20", 
+                           "25",
+                           "30", 
+                           "35", 
+                           "40", 
+                           "45", 
+                           "50", 
+                           "55",
+                           "60", 
+                           "65",  
+                           "70",
+                           "75", 
+                           "80", 
+                           "85", 
+                           "90", 
+                           "95", 
+                           "100",  
+                           "125", 
+                           "150", 
+                           "175", 
+                           "200", 
+                           "225",  
+                           "250", 
+                           "275",  
+                           "300", 
+                           "325", 
+                           "350",
+                           "375", 
+                           "400", 
+                           "425", 
+                           "450", 
+                           "475", 
+                           "500", 
+                           "550", 
+                           "600", 
+                           "650", 
+                           "700", 
+                           "750", 
+                           "800",
+                           "850", 
+                           "900", 
+                           "950",
+                           "1000")
+  
+  
+  #create a vector that includes the columns <= to the calculated quantile
+  cols_select <- as.data.frame (d) %>% 
+    dplyr::filter (d <= myquantile)
+  
+  cols_select <- as.character(cols_select$d)
+    
+  ## filter the MESS_brick dataframe considering calculated myquantile
+  MESS_brick_df_subset <-  MESS_brick_df %>% 
+   dplyr::select(c(x, y, all_of(cols_select))) 
+  
+#---------------------------------------------------------------------------#  
+#2) create a new data frame to add layers with NA value until 1000 m 
+#---------------------------------------------------------------------------#
+new_df <- matrix(NA, ncol = 47, nrow = nrow (MESS_brick_df))
+
+colnames(new_df) <- c(     "depth_0", 
+                           "depth_5", 
+                           "depth_10",
+                           "depth_15", 
+                           "depth_20", 
+                           "depth_25",
+                           "depth_30", 
+                           "depth_35", 
+                           "depth_40", 
+                           "depth_45", 
+                           "depth_50", 
+                           "depth_55",
+                           "depth_60", 
+                           "depth_65",  
+                           "depth_70",
+                           "depth_75", 
+                           "depth_80", 
+                           "depth_85", 
+                           "depth_90", 
+                           "depth_95", 
+                           "depth_100",  
+                           "depth_125", 
+                           "depth_150", 
+                           "depth_175", 
+                           "depth_200", 
+                           "depth_225",  
+                           "depth_250", 
+                           "depth_275",  
+                           "depth_300", 
+                           "depth_325", 
+                           "depth_350",
+                           "depth_375", 
+                           "depth_400", 
+                           "depth_425", 
+                           "depth_450", 
+                           "depth_475", 
+                           "depth_500", 
+                           "depth_550", 
+                           "depth_600", 
+                           "depth_650", 
+                           "depth_700", 
+                           "depth_750", 
+                           "depth_800",
+                           "depth_850", 
+                           "depth_900", 
+                           "depth_950",
+                           "depth_1000")
+
+myfirstcolumn <- (length(MESS_brick_df_subset) - 2) + 1
+
+new_df <- as.data.frame(new_df) %>% 
+  dplyr::select (c(all_of(myfirstcolumn):47))
+
+data.df <- cbind (MESS_brick_df_subset,new_df )
+
+colnames(data.df)<-c("x",
+                          "y", 
+                           "mess_0", 
+                           "mess_5", 
+                           "mess_10",
+                           "mess_15", 
+                           "mess_20", 
+                           "mess_25",
+                           "mess_30", 
+                           "mess_35", 
+                           "mess_40", 
+                           "mess_45", 
+                           "mess_50", 
+                           "mess_55",
+                           "mess_60", 
+                           "mess_65",  
+                           "mess_70",
+                           "mess_75", 
+                           "mess_80", 
+                           "mess_85", 
+                           "mess_90", 
+                           "mess_95", 
+                           "mess_100",  
+                           "mess_125", 
+                           "mess_150", 
+                           "mess_175", 
+                           "mess_200", 
+                           "mess_225",  
+                           "mess_250", 
+                           "mess_275",  
+                           "mess_300", 
+                           "mess_325", 
+                           "mess_350",
+                           "mess_375", 
+                           "mess_400", 
+                           "mess_425", 
+                           "mess_450", 
+                           "mess_475", 
+                           "mess_500", 
+                           "mess_550", 
+                           "mess_600", 
+                           "mess_650", 
+                           "mess_700", 
+                           "mess_750", 
+                           "mess_800",
+                           "mess_850", 
+                           "mess_900", 
+                           "mess_950",
+                           "mess_1000")
+  
+summary(data.df)  
+
+ #transform to raster
+ data.df.r <- rasterFromXYZ(data.df)
+ 
+ plot(data.df.r[[1:(length(MESS_brick_df_subset) - 2)]])
+
+ # # Save raster
+ # writeRaster(data.df.r,
+ #             filename=here::here ("data", "derived_data", "models_sp00001", "MESS", "bricks","MESS_masked_depth_quantile", paste0("MESS_quantile_SP_", i,".tif")),
+ #             format="GTiff",
+ #             overwrite=TRUE)
+ 
+#--------------------------------------------------------------#
+#4) sum 
+#-------------------------------------------------------#
+       
+    #sum
+    MESS_sum <- data.df %>%
+      dplyr::mutate (MESS_sum = rowSums(.[,3:49], na.rm =TRUE)) %>%      
+      dplyr::select(x, y, MESS_sum)
+    
+    summary(MESS_sum)
+    
+
+    #transform to raster
+    MESS_sum.r <- rasterFromXYZ(MESS_sum)
+
+    plot(MESS_sum.r)
+
+    #save raster
+    writeRaster(MESS_sum.r,
+            filename=here::here ("data","derived_data", "models_sp00001", "MESS", "MESS_sum_masked", paste0("MESS_sum_SP",i)),
+            format="GTiff",
+            overwrite=TRUE,
+            options=c("INTERLEAVE=BAND","COMPRESS=LZW"))
+    
+
+    
+p <- ggplot() +
+   #plot occurrence points
+  #geom_raster(data = sum_prob.df, aes(x = x, y = y, fill=sum_prob))+
+  geom_point(data = MESS_sum, aes(x = x, y = y, colour = MESS_sum), size = 1)+
+    scale_colour_distiller(name = paste("# of depth layers"), palette = "Blues", direction = +1, limits = c(min(MESS_sum$MESS_sum), max(MESS_sum$MESS_sum)), na.value="transparent")+
+  theme_pubclean(base_size = 50)+
+  annotation_map(map=global, fill="#999999")+
+  scale_y_latitude(limits = c(-80, 80))+
+  scale_x_longitude(limits = c(-100,60, ticks = 50))+
+    theme(panel.background = element_blank(),
+          #text = element_text(size = 22),
+          #axis.text.x = element_blank(),
+          #axis.ticks.x = element_blank(),
+          legend.position="right")+
+    # title
+    labs(title= paste0("No extrapolation areas for ", filenames_sp[i]),
+         y="Latitude"
+         ,x = "Longitude")+
+  guides(fill = guide_legend(order = 1, override.aes = list(size=10)),
+         colour = guide_legend(order = 2, override.aes = list(size=10)))
+
+
+ggsave(filename= paste0("MESS_sum_SP",i,".tif"), plot=p, device="tiff",
+         path=here::here ("product", "figures", "MESS"),
+         height=22, width=30,
+         units="in", dpi=300)
+ 
+
+}# end of loop
+
+    
+```
+

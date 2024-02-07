@@ -1,0 +1,241 @@
+---
+title: "MESS test"
+author: "Mireia Valle"
+date: "2023-10-24"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warming = FALSE)
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file()) # to set up the root directory to the R project path. otherwise knitr uses the path of the markdown document as root directory
+```
+
+### Script information
+
+With this script we carry out a Multivariate Environmental Similarity Surfaces (MESS) for each set of depth layers from each species. 
+
+Project: IM-20-MISSION
+
+```{r}
+library(dplyr)
+library(R.utils)
+library(scam)
+#library(mgcv)
+library(plotmo)
+library(rgdal)
+library(ggplot2)
+library(dplyr)
+library(fields) #imageplot
+library(maps) #map world
+library(raster)
+library(RColorBrewer)#color palette
+
+#SDMTools - install RTools and follow: https://cran.r-project.org/bin/windows/Rtools/
+#install.packages("remotes")
+#remotes::install_version("SDMTools", "1.1-221.2")
+library(SDMTools)
+library(dismo)
+library(stringr)
+library(readxl)
+```
+
+#Loading species id
+```{r}
+species <- read.csv (here::here ("data", "derived_data","outputs_for_modelling", "species_for_modelling.csv"),  sep = ",")
+
+species <- species %>% 
+  dplyr:: select ( -X) 
+
+names <- read_excel (here::here ("data", "derived_data", "01_species_catches", "fish_and_tuna_long_list_75_Atlantic.xlsx"))
+
+filenames_sp <- names$TaxonName
+
+
+head(names)
+
+n <- data.frame(species$SP)
+
+names(n)
+
+n <- n %>% 
+  dplyr::rename (id = "species.SP")
+
+n <- str_remove(n$id, "SP")
+
+n <- as.numeric (n)
+
+#remove SP50 because the model only has one variable
+n <- c(12, 18, 28, 34, 76, 11,  1,  2,  3,  5,  6,  8,  9, 10, 19, 21, 22, 23, 30, 31, 35, 36, 37, 38, 42, 53, 61, 66, 71)
+
+```
+
+### Load depth  values
+
+```{r}
+load(here::here ("data", "raw_data", "variables", "DEPTH", "depth.RData"))
+
+d <- as.numeric (depth)
+
+```
+
+```{r}
+#Load study area
+FAO_Atl_dissolved <- readOGR(here::here("data", "raw_data", "FAO_AREAS", "FAO_Atlantic_dissolved.shp"))
+
+plot(FAO_Atl_dissolved)
+```
+
+
+```{r}
+for (i in n) {
+  
+  for (j in d){
+
+depth_set <- brick(here::here ("data", "derived_data","outputs_for_modelling", "depth_sets", paste0("set_",j, "_m.tif")))
+
+
+load(here::here ("data", "derived_data", "outputs_for_modelling", "pa_environment", paste0("SP",i,".Rdata")))
+  
+data<-get(paste0("SP",i), env = new.env())
+
+data <- data %>% 
+  dplyr::select(lon, lat, status) %>% 
+  filter(depth == j)
+
+data <- data[,2:3]
+
+res <- loadToEnv(file.path("data", "derived_data" , "models_sp00001",paste0("model_SP",i,".RData")))[[paste0("model_SP",i)]]
+
+summary(res$smod[[length(res$smod)]])
+
+res[["svars"]]
+
+myvars <- c(res[["svars"]])
+
+#names
+
+names (depth_set) <- c("temp.v", 
+                     "sal.v",
+                     "nit.v",
+                     "do.v", 
+                     "dist_seabed.v", 
+                     "mld_relative_position.v", 
+                     "npp.v")
+
+names_list <- names(depth_set)
+
+myvars <- match(c(myvars[1:length(myvars)]),names_list)
+
+myvars
+
+length(myvars)
+
+predictors <- subset(depth_set, myvars)
+
+names(predictors)
+
+reference_points <- raster::extract(predictors, data)
+
+mess <- mess(x=predictors, v=reference_points, full=TRUE)
+
+plot(mess)
+
+noExtrapolation <- mess[[length(myvars)+1]] > 0
+
+plot(noExtrapolation)
+
+noExtrapolation <- mask(noExtrapolation, FAO_Atl_dissolved)
+
+plot(noExtrapolation)
+
+writeRaster(noExtrapolation,
+            filename = here::here ("data","derived_data", "models_sp00001", "MESS", paste0("noextrapolation_SP_",i, "_",j, "_m.tif"), sep=""),
+           format="GTiff",
+           overwrite=TRUE,
+            options=c("INTERLEAVE=BAND","COMPRESS=LZW"))
+  }
+}
+
+
+
+```
+
+#FOR SP50
+
+```{r}
+n <- 50
+
+for (i in n) {
+  
+  for (j in d){
+
+depth_set <- brick(here::here ("data", "derived_data","outputs_for_modelling", "depth_sets", paste0("set_",j, "_m.tif")))
+
+
+load(here::here ("data", "derived_data", "outputs_for_modelling", "pa_environment", paste0("SP",i,".Rdata")))
+  
+data<-get(paste0("SP",i), env = new.env())
+
+data <- data %>% 
+  dplyr::select(lon, lat, status) %>% 
+  filter(depth == j)
+
+data <- data[,2:3]
+
+res <- loadToEnv(file.path("data", "derived_data" , "models_sp00001",paste0("model_SP",i,".RData")))[[paste0("model_SP",i)]]
+
+summary(res$smod[[length(res$smod)]])
+
+res[["svars"]]
+
+myvars <- c(res[["svars"]])
+
+#names
+
+names (depth_set) <- c("temp.v", 
+                     "sal.v",
+                     "nit.v",
+                     "do.v", 
+                     "dist_seabed.v", 
+                     "mld_relative_position.v", 
+                     "npp.v")
+
+names_list <- names(depth_set)
+
+myvars <- match(c(myvars[1:length(myvars)]),names_list)
+
+myvars
+
+length(myvars)
+
+predictors <- subset(depth_set, myvars)
+
+names(predictors)
+
+reference_points <- raster::extract(predictors, data)
+
+mess <- mess(x=predictors, v=reference_points, full=TRUE)
+
+plot(mess)
+
+noExtrapolation <- mess> 0
+
+plot(noExtrapolation)
+
+noExtrapolation <- mask(noExtrapolation, FAO_Atl_dissolved)
+
+plot(noExtrapolation)
+
+writeRaster(noExtrapolation,
+            filename = here::here ("data","derived_data", "models_sp00001", "MESS", paste0("noextrapolation_SP_",i, "_",j, "_m.tif"), sep=""),
+           format="GTiff",
+           overwrite=TRUE,
+            options=c("INTERLEAVE=BAND","COMPRESS=LZW"))
+  }
+}
+
+
+
+```
