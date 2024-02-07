@@ -51,7 +51,7 @@ for (i in n){
 
 #Load species presence data without outliers
   
-SP <- loadToEnv(file.path("data", "derived_data" , "02_species_occurrences", "02_species_occurrences_no_outliers_automatic", paste0("SP",i, ".RData")))[[paste0("SP",i)]]
+SP <- loadToEnv(file.path("data", "derived_data" , "02_species_occurrences", "02_species_occurrences_no_outliers_automatic", paste0("SP",i, "new.RData")))[[paste0("SP",i)]]
   
 
 derived_dataset <- SP %>% 
@@ -90,7 +90,7 @@ write.csv(df3, file=here::here ("data", "derived_data" , "02_species_occurrences
 
 ```
 
-With this derived dataset information file created you have to make sure to deposit your dataset somewhere publicly accessible (e.g. Zenodo). When you’re ready, go to the derived dataset tool from GBIF: https://www.gbif.org/derived-dataset/register (you might need to register if you are not registered yet) fill in the form, upload the last .csv we have created (derived_dataset_gbif.csv) and submit the form. You will get a doi for your derived dataset.
+Once you create this derived dataset information fie, you have to make sure to deposit your dataset somewhere publicly accessible (e.g. Zenodo). When you’re ready, go to the derived dataset tool from GBIF: https://www.gbif.org/derived-dataset/register (you might need to register if you are not registered yet) fill in the form, upload the last .csv we have created (derived_dataset_gbif.csv) and submit the form. You will get a doi for your derived dataset.
 
 
 

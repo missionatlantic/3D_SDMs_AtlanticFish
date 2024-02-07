@@ -137,7 +137,7 @@ for (i in 1:nrow(species)){
   
   # Loading data SPi (e.g. SP1, SP2, ... SP76)
   
-  load(here::here("data","derived_data", "02_species_occurrences", "02_species_occurrences_no_outliers_automatic", paste0(species$SP[i],".RData")))
+  load(here::here("data","derived_data", "02_species_occurrences", "02_species_occurrences_no_outliers_automatic", paste0(species$SP[i],"new.RData")))
   
   # Give a generic name
   
@@ -180,7 +180,7 @@ for (i in 1:nrow(species)){
   print(species$SP[i])
   
   
-  # abro pdf para guardar plots por especie
+  # we save a plot for each species
   pdf(here::here ("data","derived_data", "02_species_occurrences", "03_species_occurrences_aggregated","plots_grouped", paste0("grouped_",species$SP[i],".pdf")))
   
   # map of occurrences

@@ -173,7 +173,7 @@ for(i in n ){
  
     #save files after removing outliers
  
-  save (list=dat$SP_id[i], file = here::here ("data", "derived_data", "outputs_for_modelling", "TR_pa_environment", paste0(dat$SP_id[i], ".RData")))
+  save (list=dat$SP_id[i], file = here::here ("data", "derived_data", "outputs_for_modelling", "TR_pa_environment", paste0(dat$SP_id[i], "new.RData")))
  
   print(dat$SP_id[i])
  

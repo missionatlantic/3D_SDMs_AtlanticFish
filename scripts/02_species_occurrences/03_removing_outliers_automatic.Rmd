@@ -134,7 +134,7 @@ for (i in 1:nrow(species)){
   write.csv(species, file=here::here ("data","derived_data", "02_species_occurrences", "species_list_FINAL_hemispheres_automatic.csv"))
 
   # save files after removing outliers
-  save (list=species$SP[i], file = here::here ("data","derived_data", "02_species_occurrences", "02_species_occurrences_no_outliers_automatic", paste0(species$SP[i], ".RData")))
+  save (list=species$SP[i], file = here::here ("data","derived_data", "02_species_occurrences", "02_species_occurrences_no_outliers_automatic", paste0(species$SP[i], "new.RData")))
   
 } # end of loop for species
   

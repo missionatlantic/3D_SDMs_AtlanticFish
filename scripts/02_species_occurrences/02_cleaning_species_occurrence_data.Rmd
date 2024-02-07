@@ -132,7 +132,7 @@ for (i in n){
   assign(paste0("SP",i), sp)
   
   # save files after removing outliers
-  save (list=paste0("SP",i), file = here::here ("data", "derived_data", "02_species_occurrences", "01_species_occurrences_clean_63", paste0("SP",i, ".RData")))
+  save (list=paste0("SP",i), file = here::here ("data", "derived_data", "02_species_occurrences", "01_species_occurrences_clean_63", paste0("SP",i, "new.RData")))
   
 }
 
