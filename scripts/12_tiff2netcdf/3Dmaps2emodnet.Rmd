@@ -1,0 +1,476 @@
+---
+title: "tiff2netcdf"
+author: "Mireia Valle based on Salvador Fernández-Bejarano (2022) and help from Yolanda Sagarminaga "
+date: "2024-02-07"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE, 
+  collapse = TRUE,
+  comment = "#>")
+```
+
+
+Fernández-Bejarano, Salvador (2022). Create a EMODnet-Biology data product as NetCDF. Consulted online at https://github.com/EMODnet/EMODnet-Biology-products-erddap-demo on YYYY-MM-DD.
+
+```{r libraries, warning=FALSE, message=FALSE}
+library(RNetCDF)
+library(readr)
+library(dplyr)
+library(glue)
+library(ncdf4)
+library(dplyr)
+library(raster) #brickç
+library(tidyverse)
+library(worrms)
+library(glue)
+library(readxl)
+```
+
+Load species list
+```{r read}
+species <- read.csv (here::here ("data", "derived_data","outputs_for_modelling", "species_for_modelling.csv"),  sep = ",")
+
+species <- species %>% 
+  dplyr:: select ( -X) 
+
+names <- read_excel (here::here ("data", "derived_data", "01_species_catches", "fish_and_tuna_long_list_75_Atlantic.xlsx"))
+
+filenames_sp <- names$TaxonName
+
+
+head(names)
+
+n <- data.frame(species$SP)
+
+names(n)
+
+n <- n %>% 
+  dplyr::rename (id = "species.SP")
+
+n <- str_remove(n$id, "SP")
+
+n <- as.numeric (n)
+
+n <- c(34, 76, 11,  1,  2,  3,  5,  6,  8,  9, 10, 19, 21, 22, 23, 30, 31, 35, 36, 37, 38, 42, 50, 53, 61, 66, 71)
+
+```
+
+Loop to transform tiff into netcdf
+```{r read}
+for(i in n){
+  
+  print(i)
+
+dataset <- brick (here::here ("data", "derived_data", "models_sp00001", "rasters_set_by_species", "HSM_masked_quantile_atl_division", paste0("HSM_masked_quantile_atl_division_SP",i,".tif")))
+
+dataset
+
+dim(dataset)
+  
+#### Transforming from stack to table
+
+dataset_df <- as.data.frame(dataset, xy=TRUE)
+  
+#we select the whole data frame which contains all depth levels and rename columns 
+  
+names (dataset_df) <- c("lon",
+                          "lat", 
+                           "0", 
+                           "5", 
+                           "10",
+                           "15", 
+                           "20", 
+                           "25",
+                           "30", 
+                           "35", 
+                           "40", 
+                           "45", 
+                           "50", 
+                           "55",
+                           "60", 
+                           "65",  
+                           "70",
+                           "75", 
+                           "80", 
+                           "85", 
+                           "90", 
+                           "95", 
+                           "100",  
+                           "125", 
+                           "150", 
+                           "175", 
+                           "200", 
+                           "225",  
+                           "250", 
+                           "275",  
+                           "300", 
+                           "325", 
+                           "350",
+                           "375", 
+                           "400", 
+                           "425", 
+                           "450", 
+                           "475", 
+                           "500", 
+                           "550", 
+                           "600", 
+                           "650", 
+                           "700", 
+                           "750", 
+                           "800",
+                           "850", 
+                           "900", 
+                           "950",
+                           "1000")
+
+
+aphiaid_id <- wm_name2id_(name = paste0(filenames_sp[i], collapse = '", "') )
+n_aphiaid <- aphiaid_id[[paste0(filenames_sp[i], collapse = '", "')]]
+
+longer <- dataset_df %>% 
+  pivot_longer(cols = c(3:49), names_to = "depth", values_to = "prob") %>% 
+  mutate (aphiaid = n_aphiaid)
+
+str(longer)
+
+summary(longer$prob)
+
+longer$depth <- as.integer(longer$depth)
+longer$prob <- as.double(longer$prob)
+longer$lat <- as.double(longer$lat)
+longer$lon <- as.double(longer$lon)
+str(longer)
+
+head(longer)
+
+# Extract the unique and sorted values of the 4 dimensions
+lon <- sort(unique(longer$lon))
+lat <- sort(unique(longer$lat))
+depth <- sort(unique(longer$depth))
+
+# # Use expand.grid() to create a data frame with all the possible 
+# # combinations of the 4 dimensions
+# longer <- expand.grid(lon = lon, lat = lat, depth = depth, 
+#                      aphiaid = n_aphiaid, 
+#                      stringsAsFactors = FALSE)
+
+longer <- longer %>% 
+  mutate(
+    id = glue("{lon}-{lat}-{depth}-{aphiaid}"))
+
+head(longer)
+
+# length(unique(longer$lon))
+# length(unique(longer$lat))
+# length(unique(longer$depth))
+# length(unique(longer$species))
+
+# Is the same as the length of the variable of interest, including all 
+# possible combinations of the dimensions even if this coerce NA's
+#length(longer$prob)
+
+longer1 <- expand.grid(lon = lon, lat = lat, depth = depth, 
+                     aphiaid = n_aphiaid, 
+                     stringsAsFactors = FALSE)
+
+# Define unique identifier again and merge the variable probablity of occurrence
+
+data <- longer %>%
+  dplyr::select(id, prob)
+
+longer <- longer1 %>% 
+  mutate(
+    id = glue("{lon}-{lat}-{depth}-{aphiaid}")
+  ) %>%
+  left_join(data) %>%
+  dplyr::select(-id)
+
+
+longer <- longer %>% 
+   dplyr::mutate(prob2 = replace_na(prob, -99999.9))
+
+longer$prob2 <- as.double(longer$prob2)
+
+# Create array
+ array <- array(
+   data = longer$prob2,
+   dim = c(666, 692, 47, 1)
+ )
+
+#summary (array)
+
+# Transform into NetCDF
+
+## Create a placeholder
+
+# The first step is to **create a netcdf file** that will work as a placeholder to add the data. We use the R package `RNetCDF`
+
+
+# Create nc file
+nc <- create.nc(here::here ("data", "derived_data" , "tiff2netcdf", paste0("3Dmap_SP", i,"_", filenames_sp[i], ".nc")))
+
+
+## Define dimensions
+
+### Longitude
+
+# Define lon dimension
+dim.def.nc(nc, dimname = "lon", dimlength = length(lon)) 
+
+# Define lon variable
+var.def.nc(nc, varname = "lon", vartype = "NC_DOUBLE", dimensions = "lon")
+
+# Add attributes
+att.put.nc(nc, variable = "lon", name = "units", type = "NC_CHAR", value = "degrees_east")
+att.put.nc(nc, variable = "lon", name = "standard_name", type = "NC_CHAR", value = "longitude")
+att.put.nc(nc, variable = "lon", name = "long_name", type = "NC_CHAR", value = "Longitude")
+
+# Put data
+var.put.nc(nc, variable = "lon", data = lon) 
+
+# Check
+var.get.nc(nc, variable = "lon")
+
+
+### Latitude
+
+# Define lat dimension
+dim.def.nc(nc, dimname = "lat", dimlength = length(lat)) 
+
+# Define lat variable
+var.def.nc(nc, varname = "lat", vartype = "NC_DOUBLE", dimensions = "lat")
+
+# Add attributes
+att.put.nc(nc, variable = "lat", name = "units", type = "NC_CHAR", value = "degrees_north")
+att.put.nc(nc, variable = "lat", name = "standard_name", type = "NC_CHAR", value = "latitude")
+att.put.nc(nc, variable = "lat", name = "long_name", type = "NC_CHAR", value = "Latitude")
+
+# Put data
+var.put.nc(nc, variable = "lat", data = lat) 
+
+# Check
+var.get.nc(nc, variable = "lat")
+
+
+### Depth
+
+# Define depth dimension
+dim.def.nc(nc, dimname = "depth", dimlength = length(depth)) 
+
+# Define depth variable
+var.def.nc(nc, varname = "depth", vartype = "NC_INT", dimensions = "depth")
+
+# Add attributes
+att.put.nc(nc, variable = "depth", name = "standard_name", type = "NC_CHAR", value = "depth")
+att.put.nc(nc, variable = "depth", name = "long_name", type = "NC_CHAR", value = "Depth")
+att.put.nc(nc, variable = "depth", name = "units", type = "NC_CHAR", value = "Depth is the vertical distance below the surface")
+att.put.nc(nc, variable = "depth", name = "depth", type = "NC_CHAR", value = "meters")
+
+# Put data
+var.put.nc(nc, variable = "depth", data = depth)
+
+# Check
+var.get.nc(nc, variable = "depth")
+
+### Taxon
+
+#### aphiaid
+
+# Define the aphia and string80 dimensions
+dim.def.nc(nc, dimname = "aphiaid", dimlength = 1)
+dim.def.nc(nc, dimname = "string80", dimlength = 80)
+
+# Add aphiaid variable and attributes 
+var.def.nc(nc, varname = "aphiaid", vartype = "NC_INT", dimensions = "aphiaid")
+att.put.nc(nc, variable = "aphiaid", name = "long_name", type = "NC_CHAR", value = "Life Science Identifier - World Register of Marine Species")
+
+# Put aphiaid data
+var.put.nc(nc, variable = "aphiaid", data = n_aphiaid)
+
+# Check
+var.get.nc(nc, variable = "aphiaid")
+
+#### taxon_name
+
+# Add taxon_name variable and attributes
+var.def.nc(nc, varname = "taxon_name", vartype = "NC_CHAR", dimension = c("string80", "aphiaid"))
+att.put.nc(nc, variable = "taxon_name", name = "standard_name", type = "NC_CHAR", value = "biological_taxon_name")
+att.put.nc(nc, variable = "taxon_name", name = "long_name", type = "NC_CHAR", value = "Scientific name of the taxa")
+
+# Put taxon_name data
+var.put.nc(nc, variable = "taxon_name", data = paste0(filenames_sp[i]))
+
+# Check
+var.get.nc(nc, variable = "taxon_name")
+
+#### taxon_lsid
+
+# Add taxon_lsid variable and attributes
+var.def.nc(nc, varname = "taxon_lsid", vartype = "NC_CHAR", dimension = c("string80", "aphiaid"))
+att.put.nc(nc, variable = "taxon_lsid", name = "standard_name", type = "NC_CHAR", value = "biological_taxon_lsid")
+att.put.nc(nc, variable = "taxon_lsid", name = "long_name", type = "NC_CHAR", value = "Life Science Identifier - World Register of Marine Species")
+
+# Put taxon_name data
+var.put.nc(nc, variable = "taxon_lsid", data = paste0(filenames_sp[i]))
+
+# Check
+var.get.nc(nc, variable = "taxon_lsid")
+
+### Coordinate Reference System
+
+# Define non-dimensional crs variable 
+var.def.nc(nc, varname = "crs", vartype = "NC_CHAR", dimensions = NA)
+
+# Add attributes
+att.put.nc(nc, variable = "crs", name = "long_name", type = "NC_CHAR", value = "Coordinate Reference System")
+att.put.nc(nc, variable = "crs", name = "geographic_crs_name", type = "NC_CHAR", value = "WGS 84")
+att.put.nc(nc, variable = "crs", name = "grid_mapping_name", type = "NC_CHAR", value = "latitude_longitude")
+att.put.nc(nc, variable = "crs", name = "reference_ellipsoid_name", type = "NC_CHAR", value = "WGS 84")
+att.put.nc(nc, variable = "crs", name = "horizontal_datum_name", type = "NC_CHAR", value = "WGS 84")
+att.put.nc(nc, variable = "crs", name = "prime_meridian_name", type = "NC_CHAR", value = "Greenwich")
+att.put.nc(nc, variable = "crs", name = "longitude_of_prime_meridian", type = "NC_DOUBLE", value = 0.)
+att.put.nc(nc, variable = "crs", name = "semi_major_axis", type = "NC_DOUBLE", value = 6378137.)
+att.put.nc(nc, variable = "crs", name = "semi_minor_axis", type = "NC_DOUBLE", value = 6356752.314245179)
+att.put.nc(nc, variable = "crs", name = "inverse_flattening", type = "NC_DOUBLE", value = 298.257223563)
+att.put.nc(nc, variable = "crs", name = "spatial_ref", type = "NC_CHAR", value = 'GEOGCS[\"WGS 84\",DATUM[\"WGS_1984\",SPHEROID[\"WGS 84\",6378137,298.257223563]],PRIMEM[\"Greenwich\",0],UNIT[\"degree\",0.0174532925199433,AUTHORITY[\"EPSG\",\"9122\"]],AXIS[\"Latitude\",NORTH],AXIS[\"Longitude\",EAST],AUTHORITY[\"EPSG\",\"4326\"]]')
+att.put.nc(nc, variable = "crs", name = "GeoTransform", type = "NC_CHAR", value = '-180 0.08333333333333333 0 90 0 -0.08333333333333333 ')
+
+## Define the variable of interest
+
+
+# Create the presence_absence variable defined by the four dimensions
+var.def.nc(nc, varname = "occurrence_probability", vartype = "NC_DOUBLE", dimensions = c("lon", "lat", "depth", "aphiaid"))
+
+# Add attributes
+att.put.nc(nc, variable = "occurrence_probability", name = "_FillValue", type = "NC_DOUBLE", value = -99999.9)
+att.put.nc(nc, variable = "occurrence_probability", name = "long_name", type = "NC_CHAR", value = "Probability of occurrence of biological entity")
+
+### Add data from a 4D Array
+
+# As we previously created a 4D array, we can pass this directly to `var.put.nc()`
+
+
+var.put.nc(nc, variable = "occurrence_probability", data = array) 
+
+### Add data from a vector: All at once
+
+var.put.nc(nc, variable = "occurrence_probability", 
+           data = longer$prob2, 
+           start = c(1, 1, 1, 1), 
+           count = c(666, 692, 47, 1)) 
+
+## Global Attributes
+
+attributes <- list(
+  title = "Probability of occurrence 3D map",
+  summary = "3-D habitat suitability maps (HSMS) or probability of occurrence maps for main commercial fish species, built using Shape-Constrained Generalized Additive Models (SC-GAMs)",                       
+  Conventions = "CF-1.8",
+  # id = "",
+  naming_authority = "emodnet-biology.eu",
+  history = "https://github.com/missionatlantic/3D_SDMs_AtlanticFish",#COMPLETAR
+  source = "https://github.com/missionatlantic/3D_SDMs_AtlanticFish",#COMPLETAR
+  # processing_level = "",
+  # comment = "", 
+  # acknowledgment = "",
+  license = "CC-BY",
+  standard_name_vocabulary = "CF Standard Name Table v1.8",
+  date_created = as.character(Sys.Date()),
+  creator_name = "Mireia Valle",
+  creator_email = "mvalle@azti.es",
+  creator_url = "www.azti.es",
+  institution = "AZTI, Marine research, Basque Research and Technology Alliance (BRTA)",
+  project = "MISSION ATLANTIC project-European Union’s Horizon 2020 research and innovation programme under grant agreements No 862428 ", 
+  publisher_name = "EMODnet-Biology",                 
+  publisher_email = "bio@emodnet.eu",                
+  publisher_url = "www.emodnet-biology.eu",                  
+  # geospatial_bounds = "",              
+  # geospatial_bounds_crs = "",          
+  # geospatial_bounds_vertical_crs = "", 
+  geospatial_lat_min = min(lat),
+  geospatial_lat_max = max(lat),
+  geospatial_lon_min = min(lon),
+  geospatial_lon_max = max(lon),
+  # geospatial_vertical_min = "",        
+  # geospatial_vertical_max = "",        
+  # geospatial_vertical_positive = "",  
+  # time_coverage_start = "1911",            
+  # time_coverage_end = "2016",              
+  # time_coverage_duration = "",         
+  # time_coverage_resolution = "",       
+  # uuid = "",                           
+  # sea_name = "",                       
+  # creator_type = "",                   
+  creator_institution = "AZTI, Marine research, Basque Research and Technology Alliance (BRTA)",            
+  # publisher_type = "",                 
+  publisher_institution = "Flanders Marine Institute (VLIZ)",        
+  # program = "",                        
+  # contributor_name = "",               
+  # contributor_role  = "",              
+  geospatial_lat_units = "degrees_north",           
+  geospatial_lon_units = "degrees_east",           
+  # geospatial_vertical_units   = "",    
+  # date_modified = "",               
+  # date_issued = "",                    
+  # date_metadata_modified   = "",       
+  # product_version = "",            
+  # keywords_vocabulary = "",          
+  # platform  = "",              
+  # platform_vocabulary = "",          
+  # instrument = "",          
+  # instrument_vocabulary  = "",        
+  # featureType = "Point",                  
+  # metadata_link = "",                  
+  # references = "",
+  comment = "Uses attributes recommended by http://cfconventions.org",
+  license = "CC-BY", 
+  publisher_name = "EMODnet Biology Data Management Team",
+  citation = "Valle, M, Ramirez-Romero, E, Ibaibarriaga, L, Citores, L, Fernandes-Salvador, JA and Chust, G (2024). Pan-Atlantic 3D distribution model incorporating water column for commercial fish. Ecological modelling.",#COMPLETAR
+  acknowledgement = "We acknowledge Ocean Biodiversity Information System (OBIS; https://obis.org/) and the Global Biodiversity Information Facility (GBIF; https://www.gbif.org/) for providing fish global occurrences studied here. We also thank to publicly available datasets Copernicus (http://marine.copernicus.eu/services-portfolio/access-to-products/) and the World Ocean Atlas (https://www.ncei.noaa.gov/products/world-ocean-atlas) for providing environmental data" #AÑADIR MISSION ATLANTIC
+)
+
+# Define function that detects if the data type should be character of 
+# integer and add to global attributes
+add_global_attributes <- function(nc, attributes){
+  
+  stopifnot(is.list(attributes))
+  
+  for(j in 1:length(attributes)){
+    if(is.character(attributes[[j]])){
+      type <- "NC_CHAR"
+    }else if(is.numeric(attributes[[j]])){
+      type <- "NC_DOUBLE"
+    }
+    att.put.nc(nc, variable = "NC_GLOBAL", name = names(attributes[j]), type = type, value = attributes[[j]])
+  }
+  sync.nc(nc)
+}
+
+# Add attributes
+add_global_attributes(nc, attributes)
+
+## Wrapping up
+
+sync.nc(nc)
+print.nc(nc)
+
+# Get variable, turn array into vector and get unique values
+#unique(c(var.get.nc(nc, variable = "occurrence_probability")))
+
+close.nc(nc)
+
+}
+```
+
+
+```{r}
+#rerun the loop assining i <- 34 because Thunnus alalunga species netcdf is missing Aphia_id and then assign 
+
+#n_aphiaid <- 127026 
+```
+
+
