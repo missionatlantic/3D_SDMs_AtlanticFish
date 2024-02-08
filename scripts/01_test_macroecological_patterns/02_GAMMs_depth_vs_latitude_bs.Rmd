@@ -1,0 +1,300 @@
+---
+title: "GAMMs"
+author: "Mireia Valle. Minor revisions by L. Ibaibarriaga"
+date: "20/7/2021"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warming = FALSE)
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file()) # to set up the root directory to the R project path. otherwise knitr uses the path of the markdown document as root directory
+```
+
+```{r}
+library(gamm4)
+library(stringr)
+library(plotmo)
+library(visreg)
+library(dplyr)
+library(mgcViz)
+library(mgcv)
+library(itsadug)
+
+```
+
+### Loading the list of species that have been selected for modelling purposes
+
+```{r}
+species_modelling <- read.csv (here::here ("data", "derived_data",  "outputs_for_modelling", "species_for_modelling.csv"),  sep = ",")
+
+species_names <- species_modelling %>% 
+  dplyr::select (SP, SN)
+```
+
+### **Southern hemisphere** ----------------------------------------------------------------------------------------------------
+
+```{r}
+# load a numeric vector with the numbers of each species from the southern hemisphere
+load (here::here ("data", "derived_data", "0_depth_vs_lat", "species_south_SP_bs.RData"))
+
+## number of columns == a length of species_south_SP list
+species_south_SP
+
+n <- data.frame(matrix(unlist(species_south_SP), ncol=length(13)))
+
+n <- n %>% 
+  rename (id = "matrix.unlist.species_south_SP...ncol...length.13..")
+
+n <- str_remove(n$id, "SP")
+
+n <- as.numeric (n)
+```
+
+
+```{r}
+
+for(i in n ){
+
+  load(file.path("data", "derived_data",  "outputs_for_modelling","pa_environment", paste0("SP",i,".Rdata")))
+  
+  ##
+  a<-get(paste0("SP",i), env = new.env())
+  
+  a <- a %>% 
+    mutate (SP_id = paste0("SP", i)) %>% 
+    dplyr::filter (status == 1) %>% 
+    filter((lat < 0)) 
+  
+  if (nrow(a)< 50){
+  nam<-paste0("SP_low",i,sep="")
+  assign(nam,a)
+  }else{
+  nam<-paste0("SP_ok",i,sep="")
+  assign(nam,a)
+  }
+  
+}
+
+```
+
+## Create a long list for sourthern hemisphere species
+
+```{r}
+long_list <-rbind(SP_ok11, SP_ok38, SP_ok53)
+
+long_list$SP_id <- as.factor (long_list$SP_id)
+
+#str(long_list)
+
+summary(long_list)
+
+```
+
+## Build a mixed model depth ~ latitude with species as random factor
+
+```{r}
+# gamm_south <- gamm4(depth ~ s (lat, k = 5), data=long_list, random=~(1|SP_id))
+# summary_gamm_south <- summary(gamm_south$gam)
+
+gamm_south_bam <- bam(-depth ~ s (lat, k = 5) + s(SP_id, bs="re"), data=long_list, method="ML")
+summary(gamm_south_bam)
+names(gamm_south_bam)
+#plot(gamm_south_bam)
+#class(gamm_south_bam)
+par (mfrow = c(2,2))
+gam.check(gamm_south_bam)
+
+sink(here::here ("data", "derived_data", "0_depth_vs_lat","gamm_south_bs.txt"))
+ print(summary(gamm_south_bam))
+ sink()  # returns output to the console
+
+
+# plot(gamm_south$gam, residuals=TRUE, pch=16, col=rgb(0, 0, 1, 0.25),  shade=T, ylim = c(0,-600))
+
+# plot(gamm_south$gam, residuals=TRUE, pch=16, col=rgb(0, 0, 1, 0.25),  shade=T, ylim = c(-600,0), ylab = "Depth")
+
+plotmo(gamm_south_bam, residuals=TRUE, pch=16, pt.col=rgb(0, 0, 1, 0.25),  shade=T, level=.95)
+
+```
+
+Predict
+```{r}
+
+#lat_south <-read.csv (here::here ("scripts", "xx_depth_vs_latitude_exploration", "lat_south.csv"),  sep = ";")
+
+pred_south <- expand.grid(lat=seq(-90, 0, by=0.5), SP_id=unique(long_list$SP_id))
+
+gamm_south.pred <- predict(gamm_south_bam, newdata=pred_south,type ="response",se.fit=T)
+
+probabilities_predict_south<-cbind(pred_south,gamm_south.pred)
+
+probabilities_predict_south<- probabilities_predict_south %>% 
+  rename (depth = "fit") 
+
+summary(probabilities_predict_south)
+
+summary(long_list)
+
+#plot(-depth~lat,data = probabilities_predict_south)
+
+```
+
+
+```{r}
+m1 <- bam(-depth ~ s (lat, k = 5), data=long_list, method="ML")
+m2 <- bam(-depth ~ s (lat, k = 5) + s(SP_id, bs="re"), data=long_list, method="ML") # random intercept
+m3 <- bam(-depth ~ s (lat, k = 5) + s(SP_id, lat, bs="re"), data=long_list, method="ML") # random intercept and slope
+m4 <- bam(-depth ~ s (lat, SP_id, k=5, bs="fs", m=1), data=long_list, method="ML")  # random smooth
+
+summary(m2)
+plot(m2)
+par (mfrow = c(2,2))
+gam.check(m2)
+
+# play with plotmo
+
+plotmo(m2, degree1=c("lat"), grid.levels=list(SP_id="SP11"),residuals=TRUE, pch=16, pt.col=rgb(0, 0, 1, 0.25),  shade=T, level=.95)
+
+plotmo(m2, degree1=c("SP_id"), grid.levels=list(lat=-4),residuals=TRUE, pch=16, pt.col=rgb(0, 0, 1, 0.25),  shade=T, level=.95)
+
+```
+
+### **Northern hemisphere** --------------------------------------------------------------------------------------------------------
+
+```{r}
+# clear environment
+rm(list = ls())
+
+# load a numeric vector with the numbers of each species from the southern hemisphere
+load (here::here ("data", "derived_data", "0_depth_vs_lat",  "species_north_SP_bs.RData"))
+
+## number of columns == a length of species_south_SP list
+species_north_SP
+
+n <- data.frame(matrix(unlist(species_north_SP), ncol=length(30)))
+names(n)
+
+n <- n %>% 
+  rename (id = "matrix.unlist.species_north_SP...ncol...length.30..")
+
+n <- str_remove_all (n$id, "[SP.RData]")
+
+n <- as.numeric (n)
+```
+
+```{r}
+
+
+for(i in n ){
+  
+  load(file.path("data", "derived_data",  "outputs_for_modelling","pa_environment", paste0("SP",i,".Rdata")))
+  
+  ##
+  a<-get(paste0("SP",i), env = new.env())
+  
+  a <- a %>% 
+    mutate (SP_id = paste0("SP", i)) %>% 
+    dplyr::filter (status == 1) %>% 
+    filter((lat > 0))
+  
+  if (nrow(a)< 50){
+  nam<-paste0("SP_low",i,sep="")
+  assign(nam,a)
+  }
+  else{
+  nam<-paste0("SP_ok",i,sep="")
+  assign(nam,a)
+  }
+  
+}
+
+
+```
+
+
+```{r}
+n
+
+long_list <-rbind(SP_ok12, SP_ok18, SP_ok28, SP_ok34, SP_ok76, SP_ok11, SP_ok1, SP_ok2, SP_ok3, SP_ok5, SP_ok6, SP_ok8, SP_ok9, SP_ok10, SP_ok19, SP_ok21, SP_ok22, SP_ok23, SP_ok30, SP_ok31, SP_ok35, SP_ok36, SP_ok37, SP_ok38, SP_ok42, SP_ok50, SP_ok53, SP_ok61, SP_ok66, SP_ok71)
+
+long_list$SP_id <- as.factor (long_list$SP_id)
+
+#str(long_list)
+
+summary(long_list)
+```
+
+### Mixed model
+```{r}
+# gamm_north <- gamm4(depth ~ s (lat, k = 5), data=long_list, random=~(1|SP_id))
+# summary(gamm_north$gam)
+# plot(gamm_north$gam)
+```
+
+### gamm4 does not work with large dataset, following https://stat.ethz.ch/pipermail/r-sig-mixed-models/2011q3/016859.html we are going to run bam: 
+#### see randon.effect help file: https://cran.r-project.org/web/packages/mgcv/mgcv.pdf
+
+```{r}
+gamm_north <- bam(-depth ~ s (lat, k = 5) + s(SP_id, bs="re"), data=long_list, method="ML")
+summary(gamm_north)
+
+ sink(here::here ("data", "derived_data", "0_depth_vs_lat","gamm_north_bs.txt"))
+ print(summary(gamm_north))
+ sink()  # returns output to the console
+
+par (mfrow = c(2,2))
+gam.check(gamm_north)
+
+```
+
+```{r}
+model_p <- predict.bam(gamm_north)
+```
+
+## Plotmo gamm_north
+
+```{r}
+plotmo(gamm_north, 
+       degree1=c("lat"),
+       residuals=TRUE, 
+       pch=16, 
+       pt.col=rgb(0, 0, 0, 0.25),  
+       shade=T, 
+       level=.95,
+       main = "",
+       xlab = "Latitude", 
+       ylab = "Depth (m)",
+       cex.lab= 1.5)
+
+```
+
+## Plot residuals
+```{r}
+plot(gamm_north, residuals=TRUE, pch=16, col=rgb(0, 0, 1, 0.25),  shade=T)
+
+#plot(gamm_north,  residuals=FALSE, col='#007FFF',  shade=T, shade.col='gray90')
+#points(depth ~ lat, data=long_list,pch=20,cex=0.75,col=rgb(1,0.65,0,0.25))
+```
+
+Leire: 
+
+```{r}
+m1 <- bam(-depth ~ s (lat, k = 5), data=long_list, method="ML")
+m2 <- bam(-depth ~ s (lat, k = 5) + s(SP_id, bs="re"), data=long_list, method="ML") # random intercept
+m3 <- bam(-depth ~ s (lat, k = 5) + s(SP_id, lat, bs="re"), data=long_list, method="ML") # random intercept and slope
+m4 <- bam(-depth ~ s (lat, SP_id, k=5, bs="fs", m=1), data=long_list, method="ML")  # random smooth
+
+summary(m2)
+plot(m2)
+par (mfrow = c(2,2))
+gam.check(m2)
+
+# play with plotmo
+
+plotmo(m2, degree1=c("lat"), grid.levels=list(SP_id="SP11"),residuals=TRUE, pch=16, pt.col=rgb(0, 0, 1, 0.25),  shade=T)
+
+plotmo(m2, degree1=c("SP_id"), grid.levels=list(lat=-4),residuals=TRUE, pch=16, pt.col=rgb(0, 0, 1, 0.25),  shade=T)
+
+```

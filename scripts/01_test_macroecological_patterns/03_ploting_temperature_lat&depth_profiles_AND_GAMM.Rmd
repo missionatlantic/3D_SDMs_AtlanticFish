@@ -1,0 +1,226 @@
+---
+title: "Ploting temperature profiles"
+author: "M Valle and L Ibaibarriaga"
+date: "6/7/2022"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warming = FALSE)
+```
+
+### Script information
+
+With this script we:
+
+build a GAMM for northern species community occurrence points, we make a prediction of the model along the latitude gradiente from 0 to 90 and we plot temperature profile from 0 to 1000 m depth along latitude (0,90) behind the response curve.
+
+Project: IM-20-MISSION
+
+### Loading required libraries
+```{r}
+library(tidyverse)# %>%
+library(stringr) #str_remove
+library(plotly)
+library(RColorBrewer)
+library(raster)
+library(mgcv)
+library(dismo)
+library(plotmo) #response curves
+```
+
+## Loading species data
+
+### **Northern hemisphere** -----------------------------------------------------------------
+
+```{r}
+# load a numeric vector with the numbers of each species from the southern hemisphere
+load (here::here ("data", "derived_data", "0_depth_vs_lat", "species_north_SP_bs.RData"))
+
+## number of columns == a length of species_south_SP list
+species_north_SP
+
+n <- data.frame(matrix(unlist(species_north_SP), ncol=length(30)))
+names(n)
+
+n <- n %>% 
+  rename (id = "matrix.unlist.species_north_SP...ncol...length.30..")
+
+n <- str_remove_all (n$id, "[SP.RData]")
+
+n <- as.numeric (n)
+```
+
+```{r}
+
+
+for(i in n ){
+  
+  load(file.path("data", "derived_data",  "outputs_for_modelling","pa_environment", paste0("SP",i,".Rdata")))
+  
+  ##
+  a<-get(paste0("SP",i), env = new.env())
+  
+  a <- a %>% 
+    mutate (SP_id = paste0("SP", i)) %>% 
+    dplyr::filter (status == 1) %>% 
+    filter((lat > 0))
+  
+  if (nrow(a)< 50){
+  nam<-paste0("SP_low",i,sep="")
+  assign(nam,a)
+  }
+  else{
+  nam<-paste0("SP_ok",i,sep="")
+  assign(nam,a)
+  }
+  
+}
+
+
+```
+
+
+```{r}
+#n
+
+long_list_N <-rbind(
+  SP_ok1, 
+  SP_ok10,
+  SP_ok11, 
+  SP_ok12, 
+  SP_ok18, 
+  SP_ok19,
+  SP_ok2, 
+  SP_ok21,
+  SP_ok22,
+  SP_ok23,
+  SP_ok28,
+  SP_ok3, 
+  SP_ok30,
+  SP_ok31,
+  SP_ok34, 
+  SP_ok35,
+  SP_ok36,
+  SP_ok37,
+  SP_ok38,
+  SP_ok42,
+  SP_ok5, 
+  SP_ok50,
+  SP_ok53,
+  SP_ok6,
+  SP_ok61,
+  SP_ok66,
+  SP_ok71, 
+  SP_ok76, 
+  SP_ok8, 
+  SP_ok9)
+  
+ 
+long_list_N$SP_id <- as.factor (long_list_N$SP_id)
+
+#str(long_list_N)
+
+summary(long_list_N)
+```
+
+#Build GAMM with species as a random effect. 
+#gamm4 does not work with large dataset, following https://stat.ethz.ch/pipermail/r-sig-mixed-models/2011q3/016859.html we are going to run bam:
+#### see randon.effect help file: #https://cran.r-project.org/web/packages/mgcv/mgcv.pdf
+```{r}
+
+m2 <- bam(-depth ~ s (lat, k = 5) + s(SP_id, bs="re"), data=long_list_N, method="ML") # random intercept
+
+summary(m2)
+
+
+
+# play with plotmo
+
+plotmo(m2, degree1=c("lat"), grid.levels=list(SP_id="SP11"),residuals=TRUE, pch=16, pt.col=rgb(0, 0, 1, 0.25),  shade=T)
+
+plotmo(m2, degree1=c("SP_id"), grid.levels=list(lat=-4),residuals=TRUE, pch=16, pt.col=rgb(0, 0, 1, 0.25),  shade=T)
+
+# prediction to get the curve and plot it using ggplot
+
+pred <- expand.grid(lat=seq(0, 90, by=0.5), SP_id=unique(long_list_N$SP_id))
+
+tmp1 <- predict(m2, newdata=pred, se.fit=T)
+pred$y1 <- tmp1$fit
+pred$se1 <- tmp1$se.fit
+tmp2 <- predict(m2, newdata=pred, se.fit=T, exclude=c("s(SP_id)"))
+pred$y2 <- tmp2$fit
+pred$se2 <- tmp2$se.fit
+```
+
+#create a vector for depth, another for probability and for zones
+```{r}
+# define depth levels
+
+load(here::here ("data", "raw_data", "variables", "DEPTH", "depth.RData"))
+
+y <- data.frame(depth)
+```
+
+#Load temperature 3D
+```{r}
+temp_3d <- brick(here::here("data", "derived_data", "outputs_for_modelling","variables","temp_3d_1000.tif"))
+  
+# divide in latitudinal zones
+zones <- init(temp_3d, v='y')
+
+#plot(zones)
+
+# summarize probability along latitudinal zones calculating the mean
+
+zmean <- data.frame(zonal(temp_3d, zones, 'mean', na.rm=TRUE))
+
+summary(zmean)
+
+zmean_no_na <- na.omit(zmean)
+
+z<-as.matrix(zmean_no_na[,2:length(zmean_no_na)])
+summary(z)
+x<-(zmean_no_na$zone)
+
+# prepare density plot data using ggplot
+
+colnames(z) <- y$depth
+rownames(z) <- zmean_no_na$zone
+df <- reshape2::melt(z, c("Lat","Depth"), value.name="Value")
+```
+
+####Plot mean temperature along latitudinal gradient and GAMM response curve for northern hemisphere species
+```{r}
+p <- ggplot()+
+  geom_contour_filled(data= df, aes(Lat, -Depth, z=Value),  alpha=0.7 )+
+  scale_fill_manual(drop = FALSE, values = rev(brewer.pal(8, "RdBu")) ) +
+  stat_contour(col="white")+
+  geom_point(data=long_list_N, aes(lat, -depth), shape = ".", inherit.aes=FALSE)+
+  #ADD GAMM response curve
+  geom_line(data = pred, aes(lat, y2), color="red", size = 1)+
+  #geom_ribbon(aes(ymin=y2-1.96*se2, ymax=y2+1.96*se2), alpha=0.3)+
+  #ylim(-1000, 0)+
+  #scale_x_continuous(limits = c(0, 90), breaks = c(0, 10, 20, 30, 40, 50, 60, 70, 80, 90))+
+  ylab("Depth (m)")+
+  xlab("Latitude")+
+  scale_x_continuous(breaks = seq(-80, 80, by = 20),expand = c(0, 0) )+
+  scale_y_continuous(limits= c(-1000, 0), expand = c(0, 0))+
+  #ggtitle("Temperature along water colunm")+
+  theme(axis.line = element_line(colour = "black"),
+    text = element_text(size = 22),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    legend.background = element_rect(colour = 'black', fill = 'white', linetype='solid'),
+    plot.title = element_text(hjust = 0.5))
+p
+
+ggsave(filename= paste0("temperature_3d_GAMM_curve_distribution_low.tif"), plot=p, device="tiff",
+         path=here::here ("product", "figures", "depth_vs_lat"), 
+         height=8, width=12, 
+         units="in", dpi=300)   
+
+
+```

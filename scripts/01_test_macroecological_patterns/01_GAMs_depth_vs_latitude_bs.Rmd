@@ -1,0 +1,313 @@
+---
+title: "GAMs"
+author: "Mireia Valle"
+date: "20/7/2021"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warming = FALSE)
+```
+
+```{r}
+library(tidyverse)
+library(mgcv) #GAM
+library(plotmo) #response curves
+library(visreg)
+#library(interplot)
+
+```
+
+### Loading the list of species that have been selected for modelling purposes
+
+```{r}
+species_modelling <- read.csv (here::here ("data", "derived_data","outputs_for_modelling", "species_for_modelling.csv"),  sep = ",")
+head(species_modelling)
+
+species_modelling <- species_modelling %>% 
+  select( -X)
+
+species_names <- species_modelling %>% 
+  select (SP, SN)
+```
+
+### **Southern hemisphere**
+
+```{r}
+# load a numeric vector with the numbers of each species from the southern hemisphere
+load (here::here ("data", "derived_data", "0_depth_vs_lat", "species_south_SP_bs.RData"))
+
+## number of columns == a length of species_south_SP list
+species_south_SP
+
+n <- data.frame(matrix(unlist(species_south_SP), ncol=length(13)))
+
+n <- n %>% 
+  dplyr::rename (id = "matrix.unlist.species_south_SP...ncol...length.13..")
+
+n <- str_remove(n$id, "SP")
+
+n <- as.numeric (n)
+
+n
+
+#remove SP21 and SP42 because they only have one observation in the southern hemisphere
+n <- c (12, 18, 34, 11,  3, 19, 36, 38,  53, 66, 71)
+
+# create occurrence matrix same length as the number of species we have in the southern hemisphere
+
+summary_gam_south <-matrix(data=NA,nrow=71,ncol=6)
+
+# create a data frame where species id will be saved
+filenames_sp<-data.frame()
+
+for(i in n ){
+  
+  load(here::here ("data", "derived_data", "outputs_for_modelling", "pa_environment", paste0("SP",i,".Rdata")))
+  
+  filenames_sp[i,1]<-paste0("SP",i,sep="")
+  
+  ##
+  a<-get(paste0("SP",i), env = new.env())
+  
+  a <- a %>% 
+    dplyr::filter (status == 1) %>% 
+    filter((lat < 0)) %>% 
+    mutate (negative_depth = -depth)
+  
+  plot(-depth~lat,data=a,
+     main=paste0("SP",i))
+  
+  gam_depth <- gam (negative_depth ~ lat, family=gaussian() , data = a, select=T, na.rm=T)
+  #plotmo(gam_depth, level=.95, scale=0)
+  visreg(gam_depth, ylab = "Depth (m)")
+  title(paste0("SP",formatC(i, width=2),sep=""))
+ 
+  
+  ###Extraigo resumen de analisis para todas las especies
+  v_summary<-(summary(gam_depth))
+  s1<-v_summary[["p.coeff"]][["(Intercept)"]]
+  s2<-v_summary[["p.coeff"]][["lat"]]
+  s3<-v_summary$r.sq
+  s4<-v_summary$dev.expl
+  s5 <- v_summary[["p.pv"]][["lat"]]
+  s6 <- nrow (a)
+   
+  summary_gam_south[i,]<-c(s1,s2,s3,s4, s5, s6)
+   }
+
+```
+
+## Table summary
+```{r}
+summary_gam_south<-data.frame(cbind(filenames_sp,summary_gam_south))
+
+summary_gam_south <- summary_gam_south %>% 
+  mutate (X4 = X4*100) %>% 
+  rename (SP = "V1", 
+          intercept = "X1",
+          estimate_lat = "X2",
+          r_sq = "X3", 
+          dev_explained_percentage = "X4",
+          p_value = "X5", 
+          obs = "X6")
+
+head(summary_gam_south)
+
+summary_gam_south <- summary_gam_south %>% 
+            filter(! is.na(SP))
+
+head(summary_gam_south)
+
+# Join species names
+summary_gam_south <- left_join(summary_gam_south, species_names, by = "SP")
+
+head(summary_gam_south)
+
+#select only those cases with more than 50 obs
+summary_gam_south <- summary_gam_south %>% 
+  dplyr::filter (obs >= 50)
+
+summary_gam_south
+```
+
+## Statistics
+```{r}
+stats_south <- summary_gam_south %>% 
+  mutate(SP_hemisphere = paste(summary_gam_south$SP, "south", sep="_")) %>% 
+  group_by (poleward_estimate = estimate_lat < 0 ) %>% 
+  mutate(signif_01 = p_value < 0.01) #%>% 
+  #mutate(n = n()) %>% 
+  #summarise(percentage = n/sum(n)*100)
+stats_south
+
+```
+
+## save table
+```{r}
+write.csv(stats_south,file=here::here ("data", "derived_data", "0_depth_vs_lat", "stats_south_bs.csv"))
+```
+
+### **Northern hemisphere**
+
+```{r}
+# clear environment
+rm(list = ls())
+
+### Loading the list of species that have been selected for modelling purposes
+species_modelling <- read.csv (here::here ("data", "derived_data", "outputs_for_modelling", "species_for_modelling.csv"),  sep = ",")
+head(species_modelling)
+
+species_modelling <- species_modelling %>% 
+  select(-X)
+
+species_names <- species_modelling %>% 
+  select (SP, SN)
+
+# Load numeric vector with the numbers of each species from the northern hemisphere
+load (here::here ("data", "derived_data", "0_depth_vs_lat", "species_north_SP_bs.RData"))
+
+## number of columns == a length of species_north_SP list
+species_north_SP
+
+n <- data.frame(matrix(unlist(species_north_SP), ncol=length(30)))
+
+n <- n %>% 
+  rename (id = "matrix.unlist.species_north_SP...ncol...length.30..")
+
+#sort(n$id)
+
+n <- str_remove(n$id, "SP")
+
+n <- as.numeric (n)
+
+max(n)
+
+# create occurrence matrix same length as the number of species we have in the northern hemisphere
+
+summary_gam_north <-matrix(data=NA,nrow=76,ncol=6)
+
+# create a data frame where species id will be saved
+filenames_sp<-data.frame()
+
+for(i in n ){
+  load(here::here ("data", "derived_data", "outputs_for_modelling", "pa_environment", paste0("SP",i,".Rdata")))
+  
+  filenames_sp[i,1]<-paste0("SP",i,sep="")
+  
+  ##
+  a<-get(paste0("SP",i), env = new.env())
+  
+  a <- a %>% 
+    dplyr::filter (status == 1) %>% 
+    filter((lat > 0)) %>% 
+    mutate (negative_depth = -depth)
+  
+  plot(-depth~lat,data=a,
+     main=paste0("SP",i))
+  
+  gam_depth <- gam (negative_depth ~ lat, family=gaussian() , data = a, select=T, na.rm=T)
+  #plotmo(gam_depth, level=.95, scale=0)
+  visreg(gam_depth, ylab = "Depth (m)")
+  title(paste0("SP",i))
+ 
+  
+  ###Extraigo resumen de analisis para todas las especies
+  v_summary<-(summary(gam_depth))
+  s1<-v_summary[["p.coeff"]][["(Intercept)"]]
+  s2<-v_summary[["p.coeff"]][["lat"]]
+  s3<-v_summary$r.sq
+  s4<-v_summary$dev.expl
+  s5 <- v_summary[["p.pv"]][["lat"]]
+  s6 <- nrow (a)
+   
+  summary_gam_north[i,]<-c(s1,s2,s3,s4, s5, s6)
+  
+  }
+   
+```
+
+## Table summary
+```{r}
+summary_gam_north<-data.frame(cbind(filenames_sp,summary_gam_north))
+
+summary_gam_north <- summary_gam_north %>% 
+  mutate (X4 = X4*100) %>% 
+  rename (SP = "V1", 
+          intercept = "X1",
+          estimate_lat = "X2",
+          r_sq = "X3", 
+          dev_explained_percentage = "X4",
+          p_value = "X5",
+           obs = "X6")
+head(summary_gam_north)
+
+summary_gam_north <- summary_gam_north %>% 
+            filter(! is.na(SP))
+
+head(summary_gam_north)
+
+# Join species names
+summary_gam_north <- left_join(summary_gam_north, species_names, by = "SP")
+
+head(summary_gam_north)
+
+#select only those cases with more than 50 obs
+summary_gam_north <- summary_gam_north %>% 
+  dplyr::filter (obs >= 50)
+
+summary_gam_north
+
+```
+
+## Statistics
+```{r}
+stats_north <- summary_gam_north %>% 
+  mutate(SP_hemisphere = paste(summary_gam_north$SP, "north", sep="_")) %>% 
+  group_by (poleward_estimate = estimate_lat > 0 ) %>% 
+  mutate(signif_01 = p_value < 0.01) #%>% 
+  #mutate(n = n()) %>% 
+  #summarise(percentage = n/sum(n)*100)
+stats_north
+
+
+```
+
+## save table
+```{r}
+write.csv(stats_north,file=here::here ("data", "derived_data", "0_depth_vs_lat", "stats_north_bs.csv"))
+```
+
+## STATISTICS 
+
+```{r}
+# clear environment
+rm(list = ls())
+
+# load stats tables
+stats_north <- read.csv (here::here ("data", "derived_data", "0_depth_vs_lat", "stats_north_bs.csv"),  sep = ",")
+
+stats_south <- read.csv (here::here ("data", "derived_data", "0_depth_vs_lat", "stats_south_bs.csv"),  sep = ",")
+
+stats <- rbind(stats_north, stats_south) %>% 
+  dplyr::select (-X)
+
+head(stats)
+
+stats_summary <- stats %>% 
+  count(poleward_estimate, signif_01, sort = TRUE) 
+
+stats_summary
+
+stats_summary_significative <- stats_summary  %>% 
+  #filter(signif_01 == TRUE) %>% 
+  mutate (percentage = n/sum(n)*100)
+
+stats_summary_significative
+
+write.csv(stats_summary_significative,file=here::here ("data", "derived_data", "0_depth_vs_lat", "stats_summary_significative_bs.csv"))
+
+```
+
