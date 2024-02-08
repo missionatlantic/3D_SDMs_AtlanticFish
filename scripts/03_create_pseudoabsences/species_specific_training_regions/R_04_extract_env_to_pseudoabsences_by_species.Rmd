@@ -187,7 +187,7 @@ summary (data_noNA)
 
 # save the file externally
 
-# save(data,file=here::here ("data","derived_data",  "03_create_pseudoabsences", "by_species", paste0("pseudoabsences_environmental_SP", i, ".RData")))
+save(data,file=here::here ("data","derived_data",  "03_create_pseudoabsences", "by_species", paste0("pseudoabsences_environmental_SP", i, "new.RData")))
 
 }
 
